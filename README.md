@@ -17,7 +17,7 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 - **📊 Progress Bar** — A real-time progress bar in the header shows how many attractions you've ticked off
 - **💾 Persistent Storage** — All data (check-in status, notes, photos) is saved in browser `localStorage` and survives page refreshes
 - **👤 Optional-Password Account System** — Sign in with anonymous account or email (password optional via magic link)
-- **☁️ Cloud Check-in Sync** — Per-user check-ins can be synced through Supabase `checkins` table; local mode remains available as fallback
+- **☁️ 10 Cloud Databases per Account** — Each account has 10 independent cloud databases; switch databases to view corresponding attractions, notes, and photos
 
 ## File Format Guide
 
@@ -53,26 +53,26 @@ If you want per-account sync across devices:
 2. Enable auth providers you need:
    - **Anonymous** (for visitor login)
    - **Email** (password login and/or magic link login)
-3. Create table `checkins`:
+3. Create table `attraction_databases`:
 
 ```sql
-create table if not exists public.checkins (
+create table if not exists public.attraction_databases (
   user_id uuid not null references auth.users(id) on delete cascade,
-  attraction_id bigint not null,
-  checked_at text,
+  db_slot smallint not null check (db_slot between 1 and 10),
+  payload jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key (user_id, attraction_id)
+  primary key (user_id, db_slot)
 );
 ```
 
 4. Enable RLS and add policy (users only access their own rows):
 
 ```sql
-alter table public.checkins enable row level security;
+alter table public.attraction_databases enable row level security;
 
-create policy "users_manage_own_checkins"
-on public.checkins
+create policy "users_manage_own_databases"
+on public.attraction_databases
 for all
 to authenticated
 using (auth.uid() = user_id)

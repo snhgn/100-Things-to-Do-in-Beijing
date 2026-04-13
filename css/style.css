@@ -91,9 +91,29 @@ header h1 {
 .account-entry {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   font-size: 0.8rem;
   opacity: 0.95;
+}
+
+#databaseSelect {
+  min-width: 74px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.78rem;
+}
+
+#databaseSelect:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+#databaseSelect option {
+  color: #333;
 }
 
 .account-entry .btn-link {

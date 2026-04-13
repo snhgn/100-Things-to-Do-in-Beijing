@@ -3,6 +3,9 @@
    ============================================================ */
 
 const AuthService = {
+  CLOUD_DB_TABLE: 'attraction_databases',
+  CLOUD_DB_COUNT: 10,
+  CLOUD_DB_SLOT_KEY: 'beijing_cloud_db_slot_v1',
   client: null,
   user: null,
   enabled: false,
@@ -61,6 +64,33 @@ const AuthService = {
 
   getUser() {
     return this.user;
+  },
+
+  getDatabaseCount() {
+    return this.CLOUD_DB_COUNT;
+  },
+
+  getSelectedDatabaseSlot() {
+    try {
+      const raw = Number(localStorage.getItem(this.CLOUD_DB_SLOT_KEY));
+      if (Number.isInteger(raw) && raw >= 1 && raw <= this.CLOUD_DB_COUNT) return raw;
+      return 1;
+    } catch (_) {
+      return 1;
+    }
+  },
+
+  setSelectedDatabaseSlot(slot) {
+    const normalized = Number(slot);
+    if (!Number.isInteger(normalized) || normalized < 1 || normalized > this.CLOUD_DB_COUNT) {
+      return this.getSelectedDatabaseSlot();
+    }
+    try {
+      localStorage.setItem(this.CLOUD_DB_SLOT_KEY, String(normalized));
+    } catch (_) {
+      // Ignore persistence failures and keep current slot in memory fallback.
+    }
+    return normalized;
   },
 
   getSafeRedirectUrl() {
@@ -159,56 +189,66 @@ const AuthService = {
     return { ok: true, message: '已退出并切回游客账号' };
   },
 
-  async loadCheckins() {
+  _sanitizeAttraction(item, fallbackId) {
+    if (!item || typeof item !== 'object') return null;
+    const normalizedId = Number(item.id);
+    return {
+      id: Number.isFinite(normalizedId) && normalizedId > 0 ? normalizedId : fallbackId,
+      name: String(item.name || '未命名景点'),
+      description: String(item.description || ''),
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      visited: Boolean(item.visited),
+      visitDate: item.visitDate || null,
+      notes: String(item.notes || ''),
+      photos: Array.isArray(item.photos)
+        ? item.photos.filter((src) => typeof src === 'string' && src.startsWith('data:image/'))
+        : [],
+    };
+  },
+
+  _normalizeDatabasePayload(payload) {
+    if (!Array.isArray(payload)) return [];
+    return payload
+      .map((item, idx) => this._sanitizeAttraction(item, idx + 1))
+      .filter(Boolean);
+  },
+
+  async loadDatabase(slot) {
     if (!this.enabled || !this.user) return null;
+    const dbSlot = this.setSelectedDatabaseSlot(slot);
     try {
       const { data, error } = await this.client
-        .from('checkins')
-        .select('attraction_id, checked_at')
-        .eq('user_id', this.user.id);
+        .from(this.CLOUD_DB_TABLE)
+        .select('payload')
+        .eq('user_id', this.user.id)
+        .eq('db_slot', dbSlot)
+        .maybeSingle();
       if (error) throw error;
-      const map = new Map();
-      (data || []).forEach((row) => {
-        map.set(Number(row.attraction_id), row.checked_at || null);
-      });
-      return map;
+      const payload = data?.payload;
+      return this._normalizeDatabasePayload(payload);
     } catch (err) {
-      console.error('Failed to load cloud check-ins:', err);
+      console.error('Failed to load cloud database:', err);
       return null;
     }
   },
 
-  async setCheckin(attractionId, checkedAt) {
+  async saveDatabase(slot, attractions) {
     if (!this.enabled || !this.user) return false;
+    const dbSlot = this.setSelectedDatabaseSlot(slot);
+    const payload = this._normalizeDatabasePayload(attractions);
     try {
-      const payload = {
+      const row = {
         user_id: this.user.id,
-        attraction_id: Number(attractionId),
-        checked_at: checkedAt || null,
+        db_slot: dbSlot,
+        payload,
       };
       const { error } = await this.client
-        .from('checkins')
-        .upsert(payload, { onConflict: 'user_id,attraction_id' });
+        .from(this.CLOUD_DB_TABLE)
+        .upsert(row, { onConflict: 'user_id,db_slot' });
       if (error) throw error;
       return true;
     } catch (err) {
-      console.error('Failed to write cloud check-in:', err);
-      return false;
-    }
-  },
-
-  async removeCheckin(attractionId) {
-    if (!this.enabled || !this.user) return false;
-    try {
-      const { error } = await this.client
-        .from('checkins')
-        .delete()
-        .eq('user_id', this.user.id)
-        .eq('attraction_id', Number(attractionId));
-      if (error) throw error;
-      return true;
-    } catch (err) {
-      console.error('Failed to delete cloud check-in:', err);
+      console.error('Failed to save cloud database:', err);
       return false;
     }
   },
