@@ -5,12 +5,14 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 ## Features
 
 - **📥 One-click Import** — Drag & drop or select files in `.docx` (Word), `.pdf`, `.xlsx/.xls` (Excel) format to populate the checklist automatically
+- **🚀 Built-in Initial Checklist** — On first open, the app preloads the 100-item list from `离开北京前的 100 个必做清单.docx`
 - **☑️ Check-in Tracking** — Every attraction has a checkbox; tick it to mark the place as visited and record the date automatically
 - **📖 Collapsible Descriptions** — Click the ▼ button or the attraction title to expand/collapse the description, keeping the list compact
 - **📝 Visit Notes** — After checking in, write your personal impressions in a notes field that auto-saves as you type
 - **📷 Photo Upload** — Upload multiple photos per attraction; thumbnails are displayed in a gallery with a full-screen lightbox view
-- **🏷️ Multi-level Tags** — Word heading levels (H1–H5) are recognized and attached to attractions as hierarchical tags
+- **🏷️ Tag Browser** — Tags are displayed as category pills; click a tag to view only attractions under that tag
 - **🔍 Filter View** — Switch between All / Visited / Unvisited to focus on what matters
+- **🧩 Independent Content Management** — Add/delete attractions in a dedicated panel separated from check-in content to reduce accidental operations
 - **📊 Progress Bar** — A real-time progress bar in the header shows how many attractions you've ticked off
 - **💾 Persistent Storage** — All data (check-in status, notes, photos) is saved in browser `localStorage` and survives page refreshes
 
