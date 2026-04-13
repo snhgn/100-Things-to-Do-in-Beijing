@@ -410,9 +410,15 @@ const App = {
     });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      if (!document.getElementById('authModal').hidden) {
+        this._closeAuthModal();
+        return;
+      }
+      if (!document.getElementById('managerDrawer').hidden) {
+        this._closeManagerDrawer();
+        return;
+      }
       document.getElementById('photoModal').hidden = true;
-      this._closeManagerDrawer();
-      this._closeAuthModal();
     });
   },
 
@@ -482,7 +488,7 @@ const App = {
       ? await window.AuthService.setCheckin(id, visitDate)
       : await window.AuthService.removeCheckin(id);
     if (!ok) {
-      console.warn('云端同步失败，已保留本地结果。');
+      console.warn('Cloud sync failed; local result was kept.');
     }
   },
 

@@ -48,7 +48,7 @@ const AuthService = {
       this.enabled = true;
       return true;
     } catch (err) {
-      console.error('Supabase 初始化失败：', err);
+      console.error('Supabase initialization failed:', err);
       this.enabled = false;
       this.user = null;
       return false;
@@ -157,7 +157,7 @@ const AuthService = {
       });
       return map;
     } catch (err) {
-      console.error('读取云端打卡失败：', err);
+      console.error('Failed to load cloud check-ins:', err);
       return null;
     }
   },
@@ -176,7 +176,7 @@ const AuthService = {
       if (error) throw error;
       return true;
     } catch (err) {
-      console.error('写入云端打卡失败：', err);
+      console.error('Failed to write cloud check-in:', err);
       return false;
     }
   },
@@ -192,7 +192,7 @@ const AuthService = {
       if (error) throw error;
       return true;
     } catch (err) {
-      console.error('删除云端打卡失败：', err);
+      console.error('Failed to delete cloud check-in:', err);
       return false;
     }
   },
