@@ -110,7 +110,8 @@ const AuthService = {
         const name = String(parsed[idx] || '').trim();
         return name || fallback;
       });
-    } catch (_) {
+    } catch (parseError) {
+      console.warn('Failed to read database names from local cache:', parseError);
       return this._defaultDatabaseNames();
     }
   },
@@ -147,7 +148,8 @@ const AuthService = {
     try {
       localStorage.setItem(this.CLOUD_DB_NAMES_KEY, JSON.stringify(names));
       return { ok: true, message: '数据库名字已更新', names };
-    } catch (_) {
+    } catch (persistError) {
+      console.warn('Failed to save database names to local cache:', persistError);
       return { ok: false, message: '保存失败，请稍后重试' };
     }
   },
@@ -181,10 +183,6 @@ const AuthService = {
     if (error) return { ok: false, message: error.message };
     this.user = data?.user || null;
     return { ok: true, message: '已切换到游客账号' };
-  },
-
-  async signInOrSignUp(_email, _password) {
-    return { ok: false, message: '邮箱登录模式已停用。' };
   },
 
   async logout() {
