@@ -390,7 +390,7 @@ const App = {
     });
 
     /* Account / auth modal */
-    document.getElementById('authEntryBtn').addEventListener('click', () => {
+    document.getElementById('databaseNameEntryBtn').addEventListener('click', () => {
       this._openAuthModal();
     });
     document.getElementById('authModalClose').addEventListener('click', () => {
@@ -399,37 +399,27 @@ const App = {
     document.getElementById('authModalBackdrop').addEventListener('click', () => {
       this._closeAuthModal();
     });
-    document.getElementById('authForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('authEmail').value.trim();
-      // Keep password as-is to avoid changing intentionally entered leading/trailing spaces.
-      const password = document.getElementById('authPassword').value;
-      const result = await window.AuthService.signInOrSignUp(email, password);
-      alert(result.message);
-      if (result.ok) this._closeAuthModal();
-      this._refreshAuthUI();
-      if (result.ok) await this._syncDatabaseFromCloud();
-      this.render();
-    });
-    document.getElementById('authAnonymousBtn').addEventListener('click', async () => {
-      const result = await window.AuthService.useAnonymous();
-      alert(result.message);
-      this._refreshAuthUI();
-      if (result.ok) await this._syncDatabaseFromCloud();
-      this.render();
-    });
-    document.getElementById('authLogoutBtn').addEventListener('click', async () => {
-      const result = await window.AuthService.logout();
-      alert(result.message);
-      this._refreshAuthUI();
-      if (result.ok) await this._syncDatabaseFromCloud();
-      this.render();
+    document.getElementById('authModalDoneBtn').addEventListener('click', () => {
+      this._closeAuthModal();
     });
 
-    const dbSelect = document.getElementById('databaseSelect');
-    dbSelect.addEventListener('change', async () => {
-      await this._switchCloudDatabase(Number(dbSelect.value));
+    document.getElementById('databaseSwitchForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nameInput = document.getElementById('databaseNameInput');
+      await this._switchCloudDatabaseByName(nameInput.value);
     });
+
+    document.getElementById('databaseRenameForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const slot = Number(document.getElementById('databaseRenameSlot').value);
+      const name = document.getElementById('databaseRenameInput').value;
+      const result = window.AuthService.setDatabaseName(slot, name);
+      alert(result.message);
+      if (!result.ok) return;
+      this._renderDatabaseOptions();
+      this._refreshAuthUI();
+    });
+    this._bindDatabaseEditorEvents();
 
     /* Photo lightbox close */
     document.getElementById('modalBackdrop').addEventListener('click', () => {
@@ -461,7 +451,7 @@ const App = {
     const enabled = await window.AuthService.init();
     this.cloudSyncEnabled = enabled;
     this.selectedDatabaseSlot = window.AuthService.getSelectedDatabaseSlot();
-    this._renderDatabaseOptions();
+    this._refreshDatabaseEditor();
     this._refreshAuthUI();
 
     if (!enabled) return;
@@ -477,45 +467,94 @@ const App = {
   },
 
   _renderDatabaseOptions() {
-    const dbSelect = document.getElementById('databaseSelect');
-    if (!dbSelect || !window.AuthService) return;
+    if (!window.AuthService) return;
+    const renameSlot = document.getElementById('databaseRenameSlot');
+    const nameList = document.getElementById('databaseNameList');
+    const names = window.AuthService.getDatabaseNames();
+    if (renameSlot) {
+      renameSlot.innerHTML = names
+        .map((name, i) => `<option value="${i + 1}">库 ${i + 1}（${esc(name)}）</option>`)
+        .join('');
+      renameSlot.value = String(this.selectedDatabaseSlot);
+    }
+    if (nameList) {
+      nameList.innerHTML = names.map((name) => `<option value="${esc(name)}"></option>`).join('');
+    }
+  },
+
+  _setCurrentDatabaseNameInput() {
+    if (!window.AuthService) return;
+    const input = document.getElementById('databaseNameInput');
+    if (!input) return;
+    input.value = window.AuthService.getDatabaseName(this.selectedDatabaseSlot);
+  },
+
+  _fillRenameInputFromSelectedSlot() {
+    if (!window.AuthService) return;
+    const renameSlot = document.getElementById('databaseRenameSlot');
+    const renameInput = document.getElementById('databaseRenameInput');
+    if (!renameSlot || !renameInput) return;
+    const selected = Number(renameSlot.value) || this.selectedDatabaseSlot;
+    renameInput.value = window.AuthService.getDatabaseName(selected);
+  },
+
+  async _switchCloudDatabaseByName(name) {
+    if (!this.cloudSyncEnabled || !window.AuthService) return;
+    const slot = window.AuthService.findDatabaseSlotByName(name);
+    if (!slot) {
+      alert('未找到该数据库名字，请先在“数据库名称管理”中将某个数据库重命名为该名字。');
+      return;
+    }
+    await this._switchCloudDatabase(slot);
+  },
+
+  async _switchCloudDatabase(slot) {
+    if (!this.cloudSyncEnabled || !window.AuthService) return;
+    const normalized = window.AuthService.setSelectedDatabaseSlot(slot);
+    this.selectedDatabaseSlot = normalized;
+    await this._syncDatabaseFromCloud();
+    this._refreshAuthUI();
+    this.render();
+  },
+
+  _bindDatabaseEditorEvents() {
+    const renameSlot = document.getElementById('databaseRenameSlot');
+    if (!renameSlot) return;
+    renameSlot.addEventListener('change', () => {
+      this._fillRenameInputFromSelectedSlot();
+    });
+  },
+
+  _refreshDatabaseEditor() {
     const count = window.AuthService.getDatabaseCount();
-    dbSelect.innerHTML = Array.from({ length: count }, (_, i) => {
-      const slot = i + 1;
-      return `<option value="${slot}">库 ${slot}</option>`;
-    }).join('');
-    dbSelect.value = String(this.selectedDatabaseSlot);
+    if (!count) return;
+    this._renderDatabaseOptions();
+    this._setCurrentDatabaseNameInput();
+    this._fillRenameInputFromSelectedSlot();
   },
 
   _refreshAuthUI() {
     const status = document.getElementById('authStatus');
     const hint = document.getElementById('authHint');
-    const logoutBtn = document.getElementById('authLogoutBtn');
-    const anonymousBtn = document.getElementById('authAnonymousBtn');
-    const dbSelect = document.getElementById('databaseSelect');
+    const switchInput = document.getElementById('databaseNameInput');
     const dbLabel = document.getElementById('databaseLabel');
 
     if (!this.cloudSyncEnabled || !window.AuthService) {
       status.textContent = '本地模式';
       hint.textContent = '未配置 Supabase，当前为本地存储模式。';
-      logoutBtn.disabled = true;
-      anonymousBtn.disabled = true;
-      dbSelect.disabled = true;
+      switchInput.disabled = true;
       dbLabel.textContent = '数据库: 本地';
       return;
     }
 
     const user = window.AuthService.getUser();
     this.selectedDatabaseSlot = window.AuthService.getSelectedDatabaseSlot();
-    dbSelect.value = String(this.selectedDatabaseSlot);
-    dbSelect.disabled = !user;
-    dbLabel.textContent = `数据库: ${this.selectedDatabaseSlot}`;
-    status.textContent = window.AuthService.getUserLabel();
-    hint.textContent = user?.is_anonymous
-      ? '当前为游客账号，可填写邮箱（密码可选）升级为个人账号。可切换 10 个云端库。'
-      : '已登录云端账号，当前库中的景点/感悟/照片会同步到服务器。';
-    logoutBtn.disabled = !user;
-    anonymousBtn.disabled = !!user?.is_anonymous;
+    const dbName = window.AuthService.getDatabaseName(this.selectedDatabaseSlot);
+    switchInput.disabled = !user;
+    dbLabel.textContent = `数据库: ${dbName}`;
+    status.textContent = user ? '云端已连接' : '未连接';
+    hint.textContent = '可编辑数据库名字；在页头输入数据库名字即可切换。';
+    this._refreshDatabaseEditor();
   },
 
   async _syncDatabaseFromCloud() {
@@ -526,15 +565,6 @@ const App = {
     this.selectedDatabaseSlot = slot;
     this.attractions = Store.replaceAll(cloudAttractions);
     this.expandedIds.clear();
-  },
-
-  async _switchCloudDatabase(slot) {
-    if (!this.cloudSyncEnabled || !window.AuthService) return;
-    const normalized = window.AuthService.setSelectedDatabaseSlot(slot);
-    this.selectedDatabaseSlot = normalized;
-    await this._syncDatabaseFromCloud();
-    this._refreshAuthUI();
-    this.render();
   },
 
   _scheduleCloudSave() {
@@ -570,6 +600,7 @@ const App = {
   },
 
   _openAuthModal() {
+    this._refreshDatabaseEditor();
     document.getElementById('authModal').hidden = false;
   },
 
