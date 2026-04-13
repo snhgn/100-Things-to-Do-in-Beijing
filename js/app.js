@@ -9,6 +9,18 @@ const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min
 const PDFJS_WORKER_URL =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
 
+function normalizeTagList(tags) {
+  if (!Array.isArray(tags)) return [];
+  return tags
+    .map((tag) => {
+      if (!tag || !tag.name) return null;
+      const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
+      const name = String(tag.name).trim();
+      return name ? { level, name } : null;
+    })
+    .filter(Boolean);
+}
+
 /* ------------------------------------------------------------------
    1. LocalStorage Store
 ------------------------------------------------------------------ */
@@ -37,22 +49,11 @@ const Store = {
   addBatch(newItems) {
     const existing = this.getAll();
     const maxId = existing.reduce((m, a) => Math.max(m, a.id || 0), 0);
-    const normalizeTags = (tags) => {
-      if (!Array.isArray(tags)) return [];
-      return tags
-        .map((tag) => {
-          if (!tag || !tag.name) return null;
-          const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
-          const name = String(tag.name).trim();
-          return name ? { level, name } : null;
-        })
-        .filter(Boolean);
-    };
     const mapped = newItems.map((item, i) => ({
       id: maxId + i + 1,
       name: item.name || '未命名景点',
       description: item.description || '',
-      tags: normalizeTags(item.tags),
+      tags: normalizeTagList(item.tags),
       visited: false,
       visitDate: null,
       notes: '',
@@ -93,16 +94,7 @@ const Parser = {
       .map((p) => ({
         name: p.name.trim(),
         description: (p.description || '').trim(),
-        tags: Array.isArray(p.tags)
-          ? p.tags
-              .map((tag) => {
-                if (!tag || !tag.name) return null;
-                const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
-                const name = String(tag.name).trim();
-                return name ? { level, name } : null;
-              })
-              .filter(Boolean)
-          : [],
+        tags: normalizeTagList(p.tags),
       }));
   },
 
@@ -156,7 +148,7 @@ const Parser = {
         current = null;
         const level = Number(tag.slice(1));
         headingStack[level - 1] = { level, name: text };
-        headingStack.length = level; // drop deeper headings when entering a shallower one
+        headingStack.length = level; // truncate stack to current level, removing deeper headings
       } else {
         const numbered = this._numberedLine(text);
         if (numbered) {
@@ -404,7 +396,7 @@ const App = {
   _cardHTML(a) {
     const expanded = this.expandedIds.has(a.id);
     const photos = a.photos || [];
-    const tags = Array.isArray(a.tags) ? a.tags : [];
+    const tags = normalizeTagList(a.tags);
     const tagsHTML = tags.length
       ? `<div class="tag-list">
            ${tags
