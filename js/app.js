@@ -9,6 +9,7 @@ const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min
 const PDFJS_WORKER_URL =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
 const TAG_KEY_SEPARATOR = '::';
+const CLOUD_SAVE_DEBOUNCE_MS = 400;
 
 function normalizeTagList(tags) {
   if (!Array.isArray(tags)) return [];
@@ -274,6 +275,8 @@ const App = {
   expandedIds: new Set(), // IDs of expanded cards
   cloudSyncEnabled: false,
   cloudSyncWarned: false,
+  selectedDatabaseSlot: 1,
+  cloudSaveTimer: null,
 
   /* ---- init ---- */
   async init() {
@@ -350,12 +353,15 @@ const App = {
     });
 
     document.getElementById('clearBtn').addEventListener('click', () => {
-      if (confirm('确定要清空所有景点数据吗？此操作不可撤销。')) {
-        this.attractions = Store.clear();
-        this.expandedIds.clear();
-        this.tagFilter = null;
-        this.render();
-      }
+      const cloudNotice = this.cloudSyncEnabled
+        ? `（将同步清空云端数据库 ${this.selectedDatabaseSlot}）`
+        : '';
+      if (!confirm(`确定要清空所有景点数据吗？此操作不可撤销。${cloudNotice}`)) return;
+      this.attractions = Store.clear();
+      this.expandedIds.clear();
+      this.tagFilter = null;
+      this._scheduleCloudSave();
+      this.render();
     });
 
     /* Filter buttons */
@@ -402,22 +408,27 @@ const App = {
       alert(result.message);
       if (result.ok) this._closeAuthModal();
       this._refreshAuthUI();
-      if (result.ok) await this._syncCheckinsFromCloud();
+      if (result.ok) await this._syncDatabaseFromCloud();
       this.render();
     });
     document.getElementById('authAnonymousBtn').addEventListener('click', async () => {
       const result = await window.AuthService.useAnonymous();
       alert(result.message);
       this._refreshAuthUI();
-      if (result.ok) await this._syncCheckinsFromCloud();
+      if (result.ok) await this._syncDatabaseFromCloud();
       this.render();
     });
     document.getElementById('authLogoutBtn').addEventListener('click', async () => {
       const result = await window.AuthService.logout();
       alert(result.message);
       this._refreshAuthUI();
-      if (result.ok) await this._syncCheckinsFromCloud();
+      if (result.ok) await this._syncDatabaseFromCloud();
       this.render();
+    });
+
+    const dbSelect = document.getElementById('databaseSelect');
+    dbSelect.addEventListener('change', async () => {
+      await this._switchCloudDatabase(Number(dbSelect.value));
     });
 
     /* Photo lightbox close */
@@ -449,18 +460,31 @@ const App = {
     }
     const enabled = await window.AuthService.init();
     this.cloudSyncEnabled = enabled;
+    this.selectedDatabaseSlot = window.AuthService.getSelectedDatabaseSlot();
+    this._renderDatabaseOptions();
     this._refreshAuthUI();
 
     if (!enabled) return;
 
     window.AuthService.onAuthStateChange(async () => {
       this._refreshAuthUI();
-      await this._syncCheckinsFromCloud();
+      await this._syncDatabaseFromCloud();
       this._renderStats();
       this._renderList();
     });
 
-    await this._syncCheckinsFromCloud();
+    await this._syncDatabaseFromCloud();
+  },
+
+  _renderDatabaseOptions() {
+    const dbSelect = document.getElementById('databaseSelect');
+    if (!dbSelect || !window.AuthService) return;
+    const count = window.AuthService.getDatabaseCount();
+    dbSelect.innerHTML = Array.from({ length: count }, (_, i) => {
+      const slot = i + 1;
+      return `<option value="${slot}">库 ${slot}</option>`;
+    }).join('');
+    dbSelect.value = String(this.selectedDatabaseSlot);
   },
 
   _refreshAuthUI() {
@@ -468,49 +492,69 @@ const App = {
     const hint = document.getElementById('authHint');
     const logoutBtn = document.getElementById('authLogoutBtn');
     const anonymousBtn = document.getElementById('authAnonymousBtn');
+    const dbSelect = document.getElementById('databaseSelect');
+    const dbLabel = document.getElementById('databaseLabel');
 
     if (!this.cloudSyncEnabled || !window.AuthService) {
       status.textContent = '本地模式';
       hint.textContent = '未配置 Supabase，当前为本地存储模式。';
       logoutBtn.disabled = true;
       anonymousBtn.disabled = true;
+      dbSelect.disabled = true;
+      dbLabel.textContent = '数据库: 本地';
       return;
     }
 
     const user = window.AuthService.getUser();
+    this.selectedDatabaseSlot = window.AuthService.getSelectedDatabaseSlot();
+    dbSelect.value = String(this.selectedDatabaseSlot);
+    dbSelect.disabled = !user;
+    dbLabel.textContent = `数据库: ${this.selectedDatabaseSlot}`;
     status.textContent = window.AuthService.getUserLabel();
     hint.textContent = user?.is_anonymous
-      ? '当前为游客账号，可填写邮箱（密码可选）升级为个人账号。'
-      : '已登录云端账号，你的打卡记录会在同账号下同步。';
+      ? '当前为游客账号，可填写邮箱（密码可选）升级为个人账号。可切换 10 个云端库。'
+      : '已登录云端账号，当前库中的景点/感悟/照片会同步到服务器。';
     logoutBtn.disabled = !user;
     anonymousBtn.disabled = !!user?.is_anonymous;
   },
 
-  async _syncCheckinsFromCloud() {
+  async _syncDatabaseFromCloud() {
     if (!this.cloudSyncEnabled || !window.AuthService) return;
-    const checkins = await window.AuthService.loadCheckins();
-    if (!(checkins instanceof Map)) return;
-    this.attractions = Store.replaceAll(
-      this.attractions.map((a) => {
-        const checkedAt = checkins.get(Number(a.id));
-        if (!checkedAt) {
-          return { ...a, visited: false, visitDate: null };
-        }
-        return { ...a, visited: true, visitDate: checkedAt };
-      })
-    );
+    const slot = window.AuthService.getSelectedDatabaseSlot();
+    const cloudAttractions = await window.AuthService.loadDatabase(slot);
+    if (!Array.isArray(cloudAttractions)) return;
+    this.selectedDatabaseSlot = slot;
+    this.attractions = Store.replaceAll(cloudAttractions);
+    this.expandedIds.clear();
   },
 
-  async _syncVisitToCloud(id, visited, visitDate) {
+  async _switchCloudDatabase(slot) {
     if (!this.cloudSyncEnabled || !window.AuthService) return;
-    const ok = visited
-      ? await window.AuthService.setCheckin(id, visitDate)
-      : await window.AuthService.removeCheckin(id);
+    const normalized = window.AuthService.setSelectedDatabaseSlot(slot);
+    this.selectedDatabaseSlot = normalized;
+    await this._syncDatabaseFromCloud();
+    this._refreshAuthUI();
+    this.render();
+  },
+
+  _scheduleCloudSave() {
+    if (this.cloudSaveTimer) clearTimeout(this.cloudSaveTimer);
+    this.cloudSaveTimer = setTimeout(() => {
+      this._saveDatabaseToCloud().catch((err) => {
+        console.error('Unexpected cloud save error:', err);
+      });
+    }, CLOUD_SAVE_DEBOUNCE_MS);
+  },
+
+  async _saveDatabaseToCloud() {
+    if (!this.cloudSyncEnabled || !window.AuthService) return;
+    const slot = window.AuthService.getSelectedDatabaseSlot();
+    const ok = await window.AuthService.saveDatabase(slot, this.attractions);
     if (!ok) {
-      console.warn('Cloud sync failed; local result was kept.');
+      console.warn('Cloud database sync failed; local result was kept.');
       if (!this.cloudSyncWarned) {
         this.cloudSyncWarned = true;
-        alert('云端同步失败，当前仅保存在本地浏览器。');
+        alert('云端保存失败，当前仅保存在本地浏览器。');
       }
     } else {
       this.cloudSyncWarned = false;
@@ -544,6 +588,7 @@ const App = {
         return;
       }
       this.attractions = Store.addBatch(parsed);
+      this._scheduleCloudSave();
       this.render();
     } catch (err) {
       console.error(err);
@@ -746,6 +791,7 @@ const App = {
         clearTimeout(timer);
         timer = setTimeout(() => {
           this.attractions = Store.update(id, { notes: textarea.value });
+          this._scheduleCloudSave();
         }, 500);
       });
     }
@@ -804,12 +850,13 @@ const App = {
     // Flush any pending notes before re-render
     const textarea = document.querySelector(`.notes-input[data-id="${id}"]`);
     if (textarea) {
-      Store.update(id, { notes: textarea.value });
+      this.attractions = Store.update(id, { notes: textarea.value });
+      this._scheduleCloudSave();
     }
 
     const visitDate = visited ? new Date().toLocaleDateString('zh-CN') : null;
     this.attractions = Store.update(id, { visited, visitDate });
-    await this._syncVisitToCloud(id, visited, visitDate);
+    this._scheduleCloudSave();
 
     // Auto-expand when marking visited so user can add notes/photos immediately
     if (visited) this.expandedIds.add(id);
@@ -838,6 +885,7 @@ const App = {
       const results = await Promise.all(readers);
       results.forEach((dataUrl) => photos.push(dataUrl));
       this.attractions = Store.update(id, { photos });
+      this._scheduleCloudSave();
       this._renderList();
     } catch (e) {
       console.error(e);
@@ -852,6 +900,7 @@ const App = {
     const photos = [...(attraction.photos || [])];
     photos.splice(idx, 1);
     this.attractions = Store.update(id, { photos });
+    this._scheduleCloudSave();
     this._renderList();
   },
 
@@ -934,6 +983,7 @@ const App = {
       description: descInput.value.trim(),
       tags,
     });
+    this._scheduleCloudSave();
     nameInput.value = '';
     descInput.value = '';
     tagInput.value = '';
@@ -949,6 +999,7 @@ const App = {
     if (!confirm(`确定删除「${target.name}」吗？此操作不可撤销。`)) return;
     this.expandedIds.delete(id);
     this.attractions = Store.remove(id);
+    this._scheduleCloudSave();
     if (this.tagFilter) {
       const stillExists = this.attractions.some((a) =>
         normalizeTagList(a.tags).some((t) => this._tagKey(t.level, t.name) === this.tagFilter)
