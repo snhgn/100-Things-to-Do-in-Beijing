@@ -97,8 +97,14 @@ header h1 {
   opacity: 0.95;
 }
 
-#databaseSelect {
-  min-width: 74px;
+.database-switch-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#databaseNameInput {
+  width: 120px;
   padding: 2px 6px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.35);
@@ -107,13 +113,13 @@ header h1 {
   font-size: 0.78rem;
 }
 
-#databaseSelect:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
+#databaseNameInput::placeholder {
+  color: rgba(255, 255, 255, 0.72);
 }
 
-#databaseSelect option {
-  color: #333;
+#databaseNameInput:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .account-entry .btn-link {
@@ -1017,7 +1023,8 @@ header h1 {
   margin-bottom: 12px;
 }
 
-#authForm input {
+.auth-modal-content input,
+.auth-modal-content select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

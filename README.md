@@ -16,8 +16,7 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 - **⚙️ Hidden Management Drawer** — Content management is moved into a compact “Management” entry to avoid accidental clicks
 - **📊 Progress Bar** — A real-time progress bar in the header shows how many attractions you've ticked off
 - **💾 Persistent Storage** — All data (check-in status, notes, photos) is saved in browser `localStorage` and survives page refreshes
-- **👤 Optional-Password Account System** — Sign in with anonymous account or email (password optional via magic link)
-- **☁️ 10 Cloud Databases per Account** — Each account has 10 independent cloud databases; switching a database loads only that slot’s attractions, notes, and photos (current slot changes are auto-saved before/while switching via debounce sync)
+- **☁️ 10 Cloud Databases + Name Switch** — Supports 10 independent cloud databases; edit each database name and switch by directly typing the name
 
 ## File Format Guide
 
@@ -50,9 +49,8 @@ No build tools are required — the app is plain HTML, CSS, and JavaScript.
 If you want per-account sync across devices:
 
 1. Create a Supabase project.
-2. Enable auth providers you need:
-   - **Anonymous** (for visitor login)
-   - **Email** (password login and/or magic link login)
+2. Enable auth provider:
+   - **Anonymous**
 3. Create table `attraction_databases`:
 
 ```sql
