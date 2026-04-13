@@ -851,6 +851,7 @@ const App = {
     const textarea = document.querySelector(`.notes-input[data-id="${id}"]`);
     if (textarea) {
       this.attractions = Store.update(id, { notes: textarea.value });
+      this._scheduleCloudSave();
     }
 
     const visitDate = visited ? new Date().toLocaleDateString('zh-CN') : null;
