@@ -8,6 +8,7 @@
 const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
 const PDFJS_WORKER_URL =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+const TAG_KEY_SEPARATOR = '::';
 
 function normalizeTagList(tags) {
   if (!Array.isArray(tags)) return [];
@@ -74,6 +75,15 @@ const Store = {
   clear() {
     localStorage.removeItem(this.KEY);
     return [];
+  },
+
+  addOne(item) {
+    return this.addBatch([item]);
+  },
+
+  remove(id) {
+    const list = this.getAll().filter((a) => a.id !== id);
+    return this._persist(list);
   },
 };
 
@@ -255,12 +265,21 @@ function esc(str) {
 const App = {
   attractions: [],   // in-memory mirror of Store
   filter: 'all',
+  tagFilter: null,
   expandedIds: new Set(), // IDs of expanded cards
 
   /* ---- init ---- */
   init() {
     this.attractions = Store.getAll();
     this._bindGlobalEvents();
+    // First-time bootstrap only: preload bundled checklist when local storage is empty.
+    if (
+      !this.attractions.length &&
+      window.DEFAULT_ATTRACTIONS &&
+      Array.isArray(window.DEFAULT_ATTRACTIONS)
+    ) {
+      this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
+    }
     this.render();
   },
 
@@ -300,6 +319,7 @@ const App = {
       if (confirm('确定要清空所有景点数据吗？此操作不可撤销。')) {
         this.attractions = Store.clear();
         this.expandedIds.clear();
+        this.tagFilter = null;
         this.render();
       }
     });
@@ -312,6 +332,21 @@ const App = {
         this.filter = btn.dataset.filter;
         this._renderList();
       });
+    });
+
+    document.getElementById('clearTagFilterBtn').addEventListener('click', () => {
+      this.tagFilter = null;
+      this._renderTagBrowser();
+      this._renderList();
+    });
+
+    document.getElementById('addAttractionForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this._addAttraction();
+    });
+
+    document.getElementById('deleteAttractionBtn').addEventListener('click', () => {
+      this._deleteAttraction();
     });
 
     /* Photo lightbox close */
@@ -337,10 +372,7 @@ const App = {
         return;
       }
       this.attractions = Store.addBatch(parsed);
-      document.getElementById('importSection').hidden = true;
-      document.getElementById('attractionsSection').hidden = false;
-      this._renderStats();
-      this._renderList();
+      this.render();
     } catch (err) {
       console.error(err);
       alert('文件解析失败：' + err.message);
@@ -355,6 +387,8 @@ const App = {
     document.getElementById('importSection').hidden = hasAttractions;
     document.getElementById('attractionsSection').hidden = !hasAttractions;
     this._renderStats();
+    this._renderTagBrowser();
+    this._renderDeleteOptions();
     this._renderList();
   },
 
@@ -371,16 +405,20 @@ const App = {
   _renderList() {
     const list = document.getElementById('attractionsList');
     const filtered = this.attractions.filter((a) => {
-      if (this.filter === 'visited') return a.visited;
-      if (this.filter === 'unvisited') return !a.visited;
-      return true;
+      const statusMatched =
+        this.filter === 'visited' ? a.visited : this.filter === 'unvisited' ? !a.visited : true;
+      if (!statusMatched) return false;
+      if (!this.tagFilter) return true;
+      const tags = normalizeTagList(a.tags);
+      const keySet = new Set(tags.map((t) => this._tagKey(t.level, t.name)));
+      return keySet.has(this.tagFilter);
     });
 
     if (!filtered.length) {
       list.innerHTML = `
         <div class="empty-state">
           <span class="empty-state-icon">🗺️</span>
-          暂无景点数据
+          ${this.tagFilter ? '该标签下暂无景点' : '暂无景点数据'}
         </div>`;
       return;
     }
@@ -399,11 +437,11 @@ const App = {
     const tagsHTML = tags.length
       ? `<div class="tag-list">
            ${tags
-             .map((tag) => {
-               const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
-               return `<span class="tag-badge level-${level}">H${level} · ${esc(tag.name)}</span>`;
-             })
-             .join('')}
+              .map((tag) => {
+                const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
+                return `<span class="tag-badge level-${level}">L${level} · ${esc(tag.name)}</span>`;
+              })
+              .join('')}
          </div>`
       : '';
 
@@ -617,6 +655,109 @@ const App = {
     photos.splice(idx, 1);
     this.attractions = Store.update(id, { photos });
     this._renderList();
+  },
+
+  _tagKey(level, name) {
+    return `${Math.max(1, Math.min(5, Number(level) || 1))}${TAG_KEY_SEPARATOR}${String(name || '').trim()}`;
+  },
+
+  _collectTagStats() {
+    const map = new Map();
+    this.attractions.forEach((a) => {
+      normalizeTagList(a.tags).forEach((tag) => {
+        const key = this._tagKey(tag.level, tag.name);
+        if (!map.has(key)) map.set(key, { ...tag, count: 0 });
+        map.get(key).count += 1;
+      });
+    });
+    return Array.from(map.entries())
+      .map(([key, value]) => ({ key, ...value }))
+      .sort((a, b) => a.level - b.level || b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'));
+  },
+
+  _renderTagBrowser() {
+    const wrapper = document.getElementById('tagBrowser');
+    const list = document.getElementById('tagBrowserList');
+    const clearBtn = document.getElementById('clearTagFilterBtn');
+    const tags = this._collectTagStats();
+    clearBtn.hidden = !this.tagFilter;
+    wrapper.hidden = false;
+
+    if (!tags.length) {
+      list.innerHTML = '<div class="tag-pill-empty">暂无可用标签</div>';
+      return;
+    }
+
+    list.innerHTML = tags
+      .map(
+        (tag) => `
+          <button class="tag-pill ${this.tagFilter === tag.key ? 'active' : ''}" data-tag-key="${esc(tag.key)}">
+            L${tag.level} · ${esc(tag.name)} (${tag.count})
+          </button>`
+      )
+      .join('');
+
+    list.querySelectorAll('.tag-pill').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.tagFilter = btn.dataset.tagKey;
+        this._renderTagBrowser();
+        this._renderList();
+      });
+    });
+  },
+
+  _renderDeleteOptions() {
+    const select = document.getElementById('deleteAttractionSelect');
+    if (!this.attractions.length) {
+      select.innerHTML = '<option value="">暂无可删除内容</option>';
+      select.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = this.attractions
+      .map((a) => `<option value="${a.id}">${esc(a.name)}</option>`)
+      .join('');
+  },
+
+  _addAttraction() {
+    const nameInput = document.getElementById('newAttractionName');
+    const descInput = document.getElementById('newAttractionDescription');
+    const tagInput = document.getElementById('newAttractionTag');
+    const name = nameInput.value.trim();
+    if (!name) {
+      alert('请先填写景点名称。');
+      return;
+    }
+    const tagName = tagInput.value.trim();
+    const tags = tagName ? [{ level: 1, name: tagName }] : [];
+    this.attractions = Store.addOne({
+      name,
+      description: descInput.value.trim(),
+      tags,
+    });
+    nameInput.value = '';
+    descInput.value = '';
+    tagInput.value = '';
+    this.render();
+  },
+
+  _deleteAttraction() {
+    const select = document.getElementById('deleteAttractionSelect');
+    const id = Number(select.value);
+    if (!id) return;
+    const target = this.attractions.find((a) => a.id === id);
+    if (!target) return;
+    if (!confirm(`确定删除「${target.name}」吗？此操作不可撤销。`)) return;
+    this.expandedIds.delete(id);
+    this.attractions = Store.remove(id);
+    if (this.tagFilter) {
+      const stillExists = this.attractions.some((a) =>
+        normalizeTagList(a.tags).some((t) => this._tagKey(t.level, t.name) === this.tagFilter)
+      );
+      if (!stillExists) this.tagFilter = null;
+    }
+    this.render();
   },
 
   /* ---- lightbox ---- */

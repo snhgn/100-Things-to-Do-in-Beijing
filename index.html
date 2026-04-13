@@ -45,13 +45,40 @@
     <section class="attractions-section" id="attractionsSection" hidden>
       <div class="toolbar">
         <button class="btn-secondary" id="importMoreBtn">📤 导入更多</button>
-        <button class="btn-secondary btn-danger" id="clearBtn">🗑️ 清空列表</button>
         <div class="filter-btns">
           <button class="filter-btn active" data-filter="all">全部</button>
           <button class="filter-btn" data-filter="visited">已打卡</button>
           <button class="filter-btn" data-filter="unvisited">未打卡</button>
         </div>
       </div>
+
+      <section class="tag-browser" id="tagBrowser">
+        <div class="tag-browser-head">
+          <h2>🏷️ 标签浏览</h2>
+          <button class="btn-link" id="clearTagFilterBtn" hidden>清除标签筛选</button>
+        </div>
+        <div class="tag-browser-list" id="tagBrowserList"></div>
+      </section>
+
+      <section class="content-manager">
+        <h2>🧩 内容管理</h2>
+        <div class="content-manager-grid">
+          <form class="add-form" id="addAttractionForm">
+            <h3>新增景点</h3>
+            <input type="text" id="newAttractionName" placeholder="景点名称（必填）" required>
+            <textarea id="newAttractionDescription" rows="3" placeholder="景点介绍（可选）"></textarea>
+            <input type="text" id="newAttractionTag" placeholder="标签（可选，如：古迹）">
+            <button type="submit" class="btn-primary">➕ 添加内容</button>
+          </form>
+
+          <div class="delete-panel">
+            <h3>删除景点</h3>
+            <select id="deleteAttractionSelect"></select>
+            <button class="btn-secondary btn-danger" id="deleteAttractionBtn">🗑️ 删除选中项</button>
+            <button class="btn-secondary btn-danger" id="clearBtn">🧨 清空全部内容</button>
+          </div>
+        </div>
+      </section>
       <div class="attractions-list" id="attractionsList"></div>
     </section>
   </div>
@@ -71,6 +98,7 @@
     </div>
   </div>
 
+  <script src="js/default-attractions.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
