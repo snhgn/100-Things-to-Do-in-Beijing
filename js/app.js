@@ -433,7 +433,7 @@ const App = {
            ${tags
               .map((tag) => {
                 const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
-                return `<span class="tag-badge level-${level}">${esc(tag.name)}</span>`;
+                return `<span class="tag-badge level-${level}">L${level} · ${esc(tag.name)}</span>`;
               })
               .join('')}
          </div>`
