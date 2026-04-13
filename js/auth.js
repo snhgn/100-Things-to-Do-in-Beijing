@@ -137,8 +137,9 @@ const AuthService = {
     if (nextName.length > 30) return { ok: false, message: '数据库名字不能超过 30 个字符' };
 
     const names = this.getDatabaseNames();
+    const normalizedName = nextName.toLowerCase();
     const duplicate = names.findIndex(
-      (item, idx) => idx !== normalizedSlot - 1 && item.toLowerCase() === nextName.toLowerCase()
+      (item, idx) => idx !== normalizedSlot - 1 && item.toLowerCase() === normalizedName
     );
     if (duplicate !== -1) return { ok: false, message: '数据库名字已存在，请使用其他名字' };
 
@@ -182,9 +183,7 @@ const AuthService = {
     return { ok: true, message: '已切换到游客账号' };
   },
 
-  async signInOrSignUp(email, password) {
-    void email;
-    void password;
+  async signInOrSignUp(_email, _password) {
     return { ok: false, message: '邮箱登录模式已停用。' };
   },
 
