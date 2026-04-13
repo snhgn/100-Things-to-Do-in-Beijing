@@ -685,7 +685,9 @@ const App = {
     /* Checkbox */
     const checkbox = card.querySelector('.visit-checkbox');
     if (checkbox) {
-      checkbox.addEventListener('change', () => this._toggleVisit(id, checkbox.checked));
+      checkbox.addEventListener('change', async () => {
+        await this._toggleVisit(id, checkbox.checked);
+      });
     }
 
     /* Notes textarea — debounced save */
@@ -750,7 +752,7 @@ const App = {
   },
 
   /* ---- mark visited / unvisited ---- */
-  _toggleVisit(id, visited) {
+  async _toggleVisit(id, visited) {
     // Flush any pending notes before re-render
     const textarea = document.querySelector(`.notes-input[data-id="${id}"]`);
     if (textarea) {
@@ -759,7 +761,7 @@ const App = {
 
     const visitDate = visited ? new Date().toLocaleDateString('zh-CN') : null;
     this.attractions = Store.update(id, { visited, visitDate });
-    this._syncVisitToCloud(id, visited, visitDate);
+    await this._syncVisitToCloud(id, visited, visitDate);
 
     // Auto-expand when marking visited so user can add notes/photos immediately
     if (visited) this.expandedIds.add(id);

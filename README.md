@@ -13,7 +13,7 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 - **🏷️ Tag Browser** — Tags are displayed as category pills; click a tag to view only attractions under that tag
 - **🔍 Filter View** — Switch between All / Visited / Unvisited to focus on what matters
 - **🧩 Independent Content Management** — Add/delete attractions in a dedicated panel separated from check-in content to reduce accidental operations
-- **⚙️ Hidden Management Drawer** — Content management is moved into a compact “管理”入口 to avoid accidental clicks
+- **⚙️ Hidden Management Drawer** — Content management is moved into a compact “Management” entry to avoid accidental clicks
 - **📊 Progress Bar** — A real-time progress bar in the header shows how many attractions you've ticked off
 - **💾 Persistent Storage** — All data (check-in status, notes, photos) is saved in browser `localStorage` and survives page refreshes
 - **👤 Optional-Password Account System** — Sign in with anonymous account or email (password optional via magic link)
