@@ -379,6 +379,7 @@ const App = {
     document.getElementById('authForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('authEmail').value.trim();
+      // Keep password as-is to avoid changing intentionally entered leading/trailing spaces.
       const password = document.getElementById('authPassword').value;
       const result = await window.AuthService.signInOrSignUp(email, password);
       alert(result.message);
