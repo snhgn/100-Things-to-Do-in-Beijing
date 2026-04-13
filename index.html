@@ -26,7 +26,7 @@
         <div class="account-entry">
           <span id="databaseLabel">数据库: 本地</span>
           <form id="databaseSwitchForm" class="database-switch-form">
-            <input type="text" id="databaseNameInput" list="databaseNameList" placeholder="输入数据库名字" autocomplete="off">
+            <input type="text" id="databaseNameInput" list="databaseNameList" placeholder="输入数据库名字" autocomplete="off" aria-label="输入数据库名字">
             <datalist id="databaseNameList"></datalist>
             <button class="btn-link" id="databaseSwitchBtn" type="submit">切换</button>
           </form>
@@ -132,7 +132,7 @@
       <p class="auth-hint" id="authHint">可编辑 10 个数据库名字；首页输入数据库名字即可切换。</p>
       <form id="databaseRenameForm">
         <select id="databaseRenameSlot" aria-label="选择要重命名的数据库"></select>
-        <input type="text" id="databaseRenameInput" placeholder="输入新的数据库名字" maxlength="30" required>
+        <input type="text" id="databaseRenameInput" placeholder="输入新的数据库名字" maxlength="30" aria-label="输入新的数据库名字" required>
         <button type="submit" class="btn-primary auth-submit">保存数据库名字</button>
       </form>
       <div class="auth-actions">
