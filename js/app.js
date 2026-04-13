@@ -272,6 +272,7 @@ const App = {
   tagFilter: null,
   expandedIds: new Set(), // IDs of expanded cards
   cloudSyncEnabled: false,
+  cloudSyncWarned: false,
 
   /* ---- init ---- */
   async init() {
@@ -489,6 +490,10 @@ const App = {
       : await window.AuthService.removeCheckin(id);
     if (!ok) {
       console.warn('Cloud sync failed; local result was kept.');
+      if (!this.cloudSyncWarned) {
+        this.cloudSyncWarned = true;
+        alert('云端同步失败，当前仅保存在本地浏览器。');
+      }
     }
   },
 

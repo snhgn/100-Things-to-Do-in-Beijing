@@ -63,6 +63,10 @@ const AuthService = {
     return this.user;
   },
 
+  getSafeRedirectUrl() {
+    return `${window.location.origin}${window.location.pathname}`;
+  },
+
   getUserLabel() {
     if (!this.user) return '未登录';
     if (this.user.is_anonymous) return '游客账号';
@@ -99,7 +103,7 @@ const AuthService = {
         if (!pass) {
           const { error: otpError } = await this.client.auth.signInWithOtp({
             email: normalizedEmail,
-            options: { emailRedirectTo: window.location.href },
+            options: { emailRedirectTo: this.getSafeRedirectUrl() },
           });
           if (otpError) return { ok: false, message: otpError.message };
           return { ok: true, message: '已发送登录链接，请查收邮箱完成绑定。' };
@@ -124,7 +128,7 @@ const AuthService = {
 
       const { error: otpError } = await this.client.auth.signInWithOtp({
         email: normalizedEmail,
-        options: { emailRedirectTo: window.location.href },
+        options: { emailRedirectTo: this.getSafeRedirectUrl() },
       });
       if (otpError) return { ok: false, message: otpError.message };
       return { ok: true, message: '已发送登录链接，请查收邮箱。' };
