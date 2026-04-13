@@ -2,6 +2,8 @@
    Supabase Auth + Check-in Sync
    ============================================================ */
 
+const VALID_PHOTO_DATA_URL_REGEX = /^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
+
 const AuthService = {
   CLOUD_DB_TABLE: 'attraction_databases',
   CLOUD_DB_COUNT: 10,
@@ -189,11 +191,11 @@ const AuthService = {
     return { ok: true, message: '已退出并切回游客账号' };
   },
 
-  _sanitizeAttraction(item, fallbackId) {
+  _sanitizeAttraction(item) {
     if (!item || typeof item !== 'object') return null;
     const normalizedId = Number(item.id);
     return {
-      id: Number.isFinite(normalizedId) && normalizedId > 0 ? normalizedId : fallbackId,
+      id: Number.isFinite(normalizedId) && normalizedId > 0 ? normalizedId : null,
       name: String(item.name || '未命名景点'),
       description: String(item.description || ''),
       tags: Array.isArray(item.tags) ? item.tags : [],
@@ -201,15 +203,34 @@ const AuthService = {
       visitDate: item.visitDate || null,
       notes: String(item.notes || ''),
       photos: Array.isArray(item.photos)
-        ? item.photos.filter((src) => typeof src === 'string' && src.startsWith('data:image/'))
+        ? item.photos.filter(
+          (src) => typeof src === 'string' && VALID_PHOTO_DATA_URL_REGEX.test(src)
+        )
         : [],
     };
   },
 
   _normalizeDatabasePayload(payload) {
     if (!Array.isArray(payload)) return [];
+    const usedIds = new Set();
+    let nextId = 1;
+    const pickId = (preferredId) => {
+      if (Number.isFinite(preferredId) && preferredId > 0 && !usedIds.has(preferredId)) {
+        usedIds.add(preferredId);
+        return preferredId;
+      }
+      while (usedIds.has(nextId)) nextId += 1;
+      const allocated = nextId;
+      usedIds.add(allocated);
+      nextId += 1;
+      return allocated;
+    };
     return payload
-      .map((item, idx) => this._sanitizeAttraction(item, idx + 1))
+      .map((item) => {
+        const sanitized = this._sanitizeAttraction(item);
+        if (!sanitized) return null;
+        return { ...sanitized, id: pickId(sanitized.id) };
+      })
       .filter(Boolean);
   },
 

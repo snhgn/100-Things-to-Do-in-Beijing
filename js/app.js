@@ -9,6 +9,7 @@ const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min
 const PDFJS_WORKER_URL =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
 const TAG_KEY_SEPARATOR = '::';
+const CLOUD_SAVE_DEBOUNCE_MS = 400;
 
 function normalizeTagList(tags) {
   if (!Array.isArray(tags)) return [];
@@ -352,13 +353,15 @@ const App = {
     });
 
     document.getElementById('clearBtn').addEventListener('click', () => {
-      if (confirm('确定要清空所有景点数据吗？此操作不可撤销。')) {
-        this.attractions = Store.clear();
-        this.expandedIds.clear();
-        this.tagFilter = null;
-        this._scheduleCloudSave();
-        this.render();
-      }
+      const cloudNotice = this.cloudSyncEnabled
+        ? `（将同步清空云端数据库 ${this.selectedDatabaseSlot}）`
+        : '';
+      if (!confirm(`确定要清空所有景点数据吗？此操作不可撤销。${cloudNotice}`)) return;
+      this.attractions = Store.clear();
+      this.expandedIds.clear();
+      this.tagFilter = null;
+      this._scheduleCloudSave();
+      this.render();
     });
 
     /* Filter buttons */
@@ -498,7 +501,7 @@ const App = {
       logoutBtn.disabled = true;
       anonymousBtn.disabled = true;
       dbSelect.disabled = true;
-      dbLabel.textContent = '库: 本地';
+      dbLabel.textContent = '数据库: 本地';
       return;
     }
 
@@ -506,7 +509,7 @@ const App = {
     this.selectedDatabaseSlot = window.AuthService.getSelectedDatabaseSlot();
     dbSelect.value = String(this.selectedDatabaseSlot);
     dbSelect.disabled = !user;
-    dbLabel.textContent = `库: ${this.selectedDatabaseSlot}`;
+    dbLabel.textContent = `数据库: ${this.selectedDatabaseSlot}`;
     status.textContent = window.AuthService.getUserLabel();
     hint.textContent = user?.is_anonymous
       ? '当前为游客账号，可填写邮箱（密码可选）升级为个人账号。可切换 10 个云端库。'
@@ -537,8 +540,10 @@ const App = {
   _scheduleCloudSave() {
     if (this.cloudSaveTimer) clearTimeout(this.cloudSaveTimer);
     this.cloudSaveTimer = setTimeout(() => {
-      this._saveDatabaseToCloud();
-    }, 400);
+      this._saveDatabaseToCloud().catch((err) => {
+        console.error('Unexpected cloud save error:', err);
+      });
+    }, CLOUD_SAVE_DEBOUNCE_MS);
   },
 
   async _saveDatabaseToCloud() {
