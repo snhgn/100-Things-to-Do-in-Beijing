@@ -16,6 +16,8 @@
   --visited-border: #27ae60;
   --success: #27ae60;
   --danger: #e74c3c;
+  --tag-browser-bg-start: #fff7f2;
+  --tag-browser-bg-end: #fff;
   --tag-level-1: #d35400;
   --tag-level-2: #e67e22;
   --tag-level-3: #3498db;
@@ -275,7 +277,7 @@ header h1 {
 
 /* ===== Tag Browser ===== */
 .tag-browser {
-  background: linear-gradient(180deg, #fff7f2 0%, #fff 100%);
+  background: linear-gradient(180deg, var(--tag-browser-bg-start) 0%, var(--tag-browser-bg-end) 100%);
   border: 1px solid #f3d3c8;
   border-radius: var(--radius);
   box-shadow: 0 2px 8px var(--shadow);

@@ -8,6 +8,7 @@
 const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
 const PDFJS_WORKER_URL =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+const TAG_KEY_SEPARATOR = '::';
 
 function normalizeTagList(tags) {
   if (!Array.isArray(tags)) return [];
@@ -272,7 +273,11 @@ const App = {
     this.attractions = Store.getAll();
     this._bindGlobalEvents();
     // First-time bootstrap only: preload bundled checklist when local storage is empty.
-    if (!this.attractions.length && Array.isArray(window.DEFAULT_ATTRACTIONS)) {
+    if (
+      !this.attractions.length &&
+      window.DEFAULT_ATTRACTIONS &&
+      Array.isArray(window.DEFAULT_ATTRACTIONS)
+    ) {
       this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
     }
     this.render();
@@ -653,7 +658,7 @@ const App = {
   },
 
   _tagKey(level, name) {
-    return `${Math.max(1, Math.min(5, Number(level) || 1))}::${String(name || '').trim()}`;
+    return `${Math.max(1, Math.min(5, Number(level) || 1))}${TAG_KEY_SEPARATOR}${String(name || '').trim()}`;
   },
 
   _collectTagStats() {
