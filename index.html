@@ -23,6 +23,10 @@
           <div class="progress-bar" id="progressBar"></div>
         </div>
         <div class="stats" id="stats">已打卡: 0 / 0</div>
+        <div class="account-entry">
+          <span id="authStatus">游客模式</span>
+          <button class="btn-link" id="authEntryBtn">👤 账号</button>
+        </div>
       </div>
     </header>
 
@@ -44,12 +48,12 @@
     <!-- Attractions Section -->
     <section class="attractions-section" id="attractionsSection" hidden>
       <div class="toolbar">
-        <button class="btn-secondary" id="importMoreBtn">📤 导入更多</button>
         <div class="filter-btns">
           <button class="filter-btn active" data-filter="all">全部</button>
           <button class="filter-btn" data-filter="visited">已打卡</button>
           <button class="filter-btn" data-filter="unvisited">未打卡</button>
         </div>
+        <button class="btn-secondary manage-btn" id="manageBtn" title="内容管理">⚙️ 管理</button>
       </div>
 
       <section class="tag-browser" id="tagBrowser">
@@ -60,25 +64,6 @@
         <div class="tag-browser-list" id="tagBrowserList"></div>
       </section>
 
-      <section class="content-manager">
-        <h2>🧩 内容管理</h2>
-        <div class="content-manager-grid">
-          <form class="add-form" id="addAttractionForm">
-            <h3>新增景点</h3>
-            <input type="text" id="newAttractionName" placeholder="景点名称（必填）" required>
-            <textarea id="newAttractionDescription" rows="3" placeholder="景点介绍（可选）"></textarea>
-            <input type="text" id="newAttractionTag" placeholder="标签（可选，如：古迹）">
-            <button type="submit" class="btn-primary">➕ 添加内容</button>
-          </form>
-
-          <div class="delete-panel">
-            <h3>删除景点</h3>
-            <select id="deleteAttractionSelect"></select>
-            <button class="btn-secondary btn-danger" id="deleteAttractionBtn">🗑️ 删除选中项</button>
-            <button class="btn-secondary btn-danger" id="clearBtn">🧨 清空全部内容</button>
-          </div>
-        </div>
-      </section>
       <div class="attractions-list" id="attractionsList"></div>
     </section>
   </div>
@@ -98,7 +83,60 @@
     </div>
   </div>
 
+  <div class="manager-drawer" id="managerDrawer" hidden>
+    <div class="manager-drawer-backdrop" id="managerDrawerBackdrop"></div>
+    <aside class="manager-drawer-panel">
+      <div class="manager-drawer-head">
+        <h2>🧩 内容管理</h2>
+        <button class="modal-close" id="managerDrawerClose" aria-label="关闭">✕</button>
+      </div>
+      <div class="manager-drawer-actions">
+        <button class="btn-secondary" id="importMoreBtn">📤 导入更多</button>
+      </div>
+      <div class="content-manager-grid">
+        <form class="add-form" id="addAttractionForm">
+          <h3>新增景点</h3>
+          <input type="text" id="newAttractionName" placeholder="景点名称（必填）" required>
+          <textarea id="newAttractionDescription" rows="3" placeholder="景点介绍（可选）"></textarea>
+          <input type="text" id="newAttractionTag" placeholder="标签（可选，如：古迹）">
+          <button type="submit" class="btn-primary">➕ 添加内容</button>
+        </form>
+
+        <div class="delete-panel">
+          <h3>删除景点</h3>
+          <select id="deleteAttractionSelect"></select>
+          <button class="btn-secondary btn-danger" id="deleteAttractionBtn">🗑️ 删除选中项</button>
+          <button class="btn-secondary btn-danger" id="clearBtn">🧨 清空全部内容</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="auth-modal" id="authModal" hidden>
+    <div class="auth-modal-backdrop" id="authModalBackdrop"></div>
+    <div class="auth-modal-content">
+      <button class="modal-close" id="authModalClose" aria-label="关闭">✕</button>
+      <h2>账号登录</h2>
+      <p class="auth-hint" id="authHint">邮箱可不填密码：将发送一次性登录链接。</p>
+      <form id="authForm">
+        <input type="email" id="authEmail" placeholder="邮箱（必填）" autocomplete="email" required>
+        <input type="password" id="authPassword" placeholder="密码（可选）" autocomplete="current-password">
+        <button type="submit" class="btn-primary auth-submit">邮箱登录 / 注册</button>
+      </form>
+      <div class="auth-actions">
+        <button class="btn-secondary" id="authAnonymousBtn">使用游客账号</button>
+        <button class="btn-secondary btn-danger" id="authLogoutBtn">退出登录</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+  <script>
+    // Supabase anon key is public by design; keep RLS enabled to protect user data.
+    window.SUPABASE_CONFIG = window.SUPABASE_CONFIG || { url: '', anonKey: '' };
+  </script>
   <script src="js/default-attractions.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
