@@ -48,6 +48,12 @@
     <!-- Attractions Section -->
     <section class="attractions-section" id="attractionsSection" hidden>
       <div class="toolbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="searchInput" class="search-input"
+                 placeholder="搜索景点名称、介绍或标签…" autocomplete="off">
+          <button class="search-clear" id="searchClearBtn" hidden aria-label="清除搜索">✕</button>
+        </div>
         <div class="filter-btns">
           <button class="filter-btn active" data-filter="all">全部</button>
           <button class="filter-btn" data-filter="visited">已打卡</button>
