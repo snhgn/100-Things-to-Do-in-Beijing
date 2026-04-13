@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>北京100个打卡景点清单</title>
+  <!-- SheetJS for Excel parsing -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- mammoth.js for Word parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <span class="header-icon">🏮</span>
+        <h1>北京打卡景点清单</h1>
+      </div>
+      <div class="header-right">
+        <div class="progress-container">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="stats" id="stats">已打卡: 0 / 0</div>
+      </div>
+    </header>
+
+    <!-- Import Section -->
+    <section class="import-section" id="importSection">
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-icon">📁</div>
+        <h2>导入景点清单</h2>
+        <p class="format-hint">支持 Word (.docx)、PDF (.pdf)、Excel (.xlsx / .xls) 格式</p>
+        <button class="btn-primary" id="importBtn">选择文件</button>
+        <input type="file" id="fileInput" accept=".docx,.pdf,.xlsx,.xls" hidden>
+        <p class="hint">或将文件拖放到此处</p>
+        <div class="sample-tip">
+          <strong>提示：</strong>Excel 中每行为一个景点（第一列为名称，第二列为描述）；Word/PDF 中每个编号条目或标题为一个景点。
+        </div>
+      </div>
+    </section>
+
+    <!-- Attractions Section -->
+    <section class="attractions-section" id="attractionsSection" hidden>
+      <div class="toolbar">
+        <button class="btn-secondary" id="importMoreBtn">📤 导入更多</button>
+        <button class="btn-secondary btn-danger" id="clearBtn">🗑️ 清空列表</button>
+        <div class="filter-btns">
+          <button class="filter-btn active" data-filter="all">全部</button>
+          <button class="filter-btn" data-filter="visited">已打卡</button>
+          <button class="filter-btn" data-filter="unvisited">未打卡</button>
+        </div>
+      </div>
+      <div class="attractions-list" id="attractionsList"></div>
+    </section>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay" hidden>
+    <div class="spinner"></div>
+    <p>正在解析文件，请稍候…</p>
+  </div>
+
+  <!-- Photo Lightbox Modal -->
+  <div class="modal" id="photoModal" hidden>
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close" id="modalClose" aria-label="关闭">✕</button>
+      <img id="modalImage" src="" alt="放大图片">
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

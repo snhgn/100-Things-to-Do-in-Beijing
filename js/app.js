@@ -1,0 +1,603 @@
+/* ============================================================
+   北京打卡景点清单 · app.js
+   ============================================================ */
+
+/* ------------------------------------------------------------------
+   pdf.js 4.x CDN URL  (4.x is patched against CVE that affected ≤4.1.392)
+------------------------------------------------------------------ */
+const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
+const PDFJS_WORKER_URL =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+
+/* ------------------------------------------------------------------
+   1. LocalStorage Store
+------------------------------------------------------------------ */
+const Store = {
+  KEY: 'beijing_attractions_v1',
+
+  getAll() {
+    try {
+      const raw = localStorage.getItem(this.KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (_) {
+      return [];
+    }
+  },
+
+  _persist(list) {
+    try {
+      localStorage.setItem(this.KEY, JSON.stringify(list));
+    } catch (e) {
+      // Storage quota may be exceeded when photos are large
+      alert('存储空间不足，部分数据（尤其是照片）可能无法保存。请删除一些照片后重试。');
+    }
+    return list;
+  },
+
+  addBatch(newItems) {
+    const existing = this.getAll();
+    const maxId = existing.reduce((m, a) => Math.max(m, a.id || 0), 0);
+    const mapped = newItems.map((item, i) => ({
+      id: maxId + i + 1,
+      name: item.name || '未命名景点',
+      description: item.description || '',
+      visited: false,
+      visitDate: null,
+      notes: '',
+      photos: [],
+    }));
+    return this._persist([...existing, ...mapped]);
+  },
+
+  update(id, patch) {
+    const list = this.getAll();
+    const idx = list.findIndex((a) => a.id === id);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...patch };
+    }
+    return this._persist(list);
+  },
+
+  clear() {
+    localStorage.removeItem(this.KEY);
+    return [];
+  },
+};
+
+/* ------------------------------------------------------------------
+   2. File Parser  (Excel · Word · PDF)
+------------------------------------------------------------------ */
+const Parser = {
+  /* -------- helpers -------- */
+  _numberedLine(text) {
+    // matches "1. 景点", "1、景点", "1 景点" etc.
+    const m = text.match(/^\s*(\d+)\s*[\.、。\s]\s*(.+)/);
+    return m ? m[2].trim() : null;
+  },
+
+  _buildAttractions(nameDescPairs) {
+    return nameDescPairs
+      .filter((p) => p.name && p.name.trim())
+      .map((p) => ({ name: p.name.trim(), description: (p.description || '').trim() }));
+  },
+
+  /* -------- Excel -------- */
+  async parseExcel(file) {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+    if (!rows.length) return [];
+
+    // Auto-detect header row (if first row contains keyword like 名称/景点/名字/name)
+    const firstCells = rows[0].map((c) => String(c).toLowerCase());
+    const looksLikeHeader = firstCells.some(
+      (c) => /名称|景点|地点|名字|title|name|标题/.test(c)
+    );
+    const dataRows = looksLikeHeader ? rows.slice(1) : rows;
+
+    const pairs = dataRows
+      .filter((row) => row.some((cell) => String(cell).trim()))
+      .map((row) => {
+        const cells = row.map((c) => String(c).trim());
+        if (cells.length === 1) return { name: cells[0], description: '' };
+        const [name, ...rest] = cells;
+        return { name, description: rest.filter(Boolean).join(' | ') };
+      });
+
+    return this._buildAttractions(pairs);
+  },
+
+  /* -------- Word (.docx) -------- */
+  async parseWord(file) {
+    const buffer = await file.arrayBuffer();
+    const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+    const div = document.createElement('div');
+    div.innerHTML = result.value;
+
+    const pairs = [];
+    let current = null;
+
+    for (const el of div.querySelectorAll('h1,h2,h3,h4,h5,p,li')) {
+      const tag = el.tagName.toLowerCase();
+      const text = el.textContent.trim();
+      if (!text) continue;
+
+      if (['h1', 'h2', 'h3', 'h4', 'h5'].includes(tag)) {
+        if (current) pairs.push(current);
+        current = { name: text, description: '' };
+      } else {
+        const numbered = this._numberedLine(text);
+        if (numbered) {
+          if (current) pairs.push(current);
+          current = { name: numbered, description: '' };
+        } else if (current) {
+          current.description += (current.description ? '\n' : '') + text;
+        } else {
+          // First plain paragraph — treat it as an attraction name
+          current = { name: text, description: '' };
+        }
+      }
+    }
+    if (current) pairs.push(current);
+    return this._buildAttractions(pairs);
+  },
+
+  /* -------- PDF -------- */
+  async parsePDF(file) {
+    // Load pdf.js 4.x lazily via dynamic import (patched version — no known CVEs)
+    let pdfjsLib;
+    try {
+      pdfjsLib = await import(/* webpackIgnore: true */ PDFJS_URL);
+      pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+    } catch (e) {
+      throw new Error(
+        'PDF 解析器加载失败，请检查网络连接后重试。\n详情：' + e.message
+      );
+    }
+
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+
+    let fullText = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      // Reconstruct lines using y-position grouping
+      const items = content.items;
+      // Sort by page order (top-to-bottom, left-to-right)
+      const lines = [];
+      let lastY = null;
+      let currentLine = '';
+      for (const item of items) {
+        const y = item.transform ? Math.round(item.transform[5]) : 0;
+        if (lastY !== null && Math.abs(y - lastY) > 2) {
+          if (currentLine.trim()) lines.push(currentLine.trim());
+          currentLine = item.str;
+        } else {
+          currentLine += item.str;
+        }
+        lastY = y;
+      }
+      if (currentLine.trim()) lines.push(currentLine.trim());
+      fullText += lines.join('\n') + '\n';
+    }
+
+    const pairs = [];
+    let current = null;
+
+    for (const raw of fullText.split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+
+      const numbered = this._numberedLine(line);
+      if (numbered) {
+        if (current) pairs.push(current);
+        current = { name: numbered, description: '' };
+      } else if (current) {
+        current.description += (current.description ? ' ' : '') + line;
+      } else {
+        current = { name: line, description: '' };
+      }
+    }
+    if (current) pairs.push(current);
+    return this._buildAttractions(pairs);
+  },
+
+  /* -------- dispatch -------- */
+  async parse(file) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.xlsx') || name.endsWith('.xls')) return this.parseExcel(file);
+    if (name.endsWith('.docx')) return this.parseWord(file);
+    if (name.endsWith('.pdf')) return this.parsePDF(file);
+    throw new Error(`不支持的文件格式："${file.name}"。请使用 .docx、.pdf、.xlsx 或 .xls 文件。`);
+  },
+};
+
+/* ------------------------------------------------------------------
+   3. HTML escape utility
+------------------------------------------------------------------ */
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ------------------------------------------------------------------
+   4. Main Application
+------------------------------------------------------------------ */
+const App = {
+  attractions: [],   // in-memory mirror of Store
+  filter: 'all',
+  expandedIds: new Set(), // IDs of expanded cards
+
+  /* ---- init ---- */
+  init() {
+    this.attractions = Store.getAll();
+    this._bindGlobalEvents();
+    this.render();
+  },
+
+  /* ---- global event bindings ---- */
+  _bindGlobalEvents() {
+    /* File picker button */
+    document.getElementById('importBtn').addEventListener('click', () =>
+      document.getElementById('fileInput').click()
+    );
+
+    /* File input change */
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+      if (e.target.files.length) this._handleFile(e.target.files[0]);
+      e.target.value = ''; // allow re-import same filename
+    });
+
+    /* Drag & drop */
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) this._handleFile(e.dataTransfer.files[0]);
+    });
+
+    /* Toolbar buttons */
+    document.getElementById('importMoreBtn').addEventListener('click', () => {
+      document.getElementById('attractionsSection').hidden = true;
+      document.getElementById('importSection').hidden = false;
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      if (confirm('确定要清空所有景点数据吗？此操作不可撤销。')) {
+        this.attractions = Store.clear();
+        this.expandedIds.clear();
+        this.render();
+      }
+    });
+
+    /* Filter buttons */
+    document.querySelectorAll('.filter-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.filter = btn.dataset.filter;
+        this._renderList();
+      });
+    });
+
+    /* Photo lightbox close */
+    document.getElementById('modalBackdrop').addEventListener('click', () => {
+      document.getElementById('photoModal').hidden = true;
+    });
+    document.getElementById('modalClose').addEventListener('click', () => {
+      document.getElementById('photoModal').hidden = true;
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') document.getElementById('photoModal').hidden = true;
+    });
+  },
+
+  /* ---- file handling ---- */
+  async _handleFile(file) {
+    const loading = document.getElementById('loadingOverlay');
+    loading.hidden = false;
+    try {
+      const parsed = await Parser.parse(file);
+      if (!parsed.length) {
+        alert('未能从文件中解析出景点数据，请检查文件内容和格式。');
+        return;
+      }
+      this.attractions = Store.addBatch(parsed);
+      document.getElementById('importSection').hidden = true;
+      document.getElementById('attractionsSection').hidden = false;
+      this._renderStats();
+      this._renderList();
+    } catch (err) {
+      console.error(err);
+      alert('文件解析失败：' + err.message);
+    } finally {
+      loading.hidden = true;
+    }
+  },
+
+  /* ---- full render ---- */
+  render() {
+    const hasAttractions = this.attractions.length > 0;
+    document.getElementById('importSection').hidden = hasAttractions;
+    document.getElementById('attractionsSection').hidden = !hasAttractions;
+    this._renderStats();
+    this._renderList();
+  },
+
+  /* ---- stats + progress bar ---- */
+  _renderStats() {
+    const total = this.attractions.length;
+    const visited = this.attractions.filter((a) => a.visited).length;
+    document.getElementById('stats').textContent = `已打卡: ${visited} / ${total}`;
+    const pct = total > 0 ? (visited / total) * 100 : 0;
+    document.getElementById('progressBar').style.width = `${pct}%`;
+  },
+
+  /* ---- list render ---- */
+  _renderList() {
+    const list = document.getElementById('attractionsList');
+    const filtered = this.attractions.filter((a) => {
+      if (this.filter === 'visited') return a.visited;
+      if (this.filter === 'unvisited') return !a.visited;
+      return true;
+    });
+
+    if (!filtered.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <span class="empty-state-icon">🗺️</span>
+          暂无景点数据
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = filtered.map((a) => this._cardHTML(a)).join('');
+
+    // Bind per-card events after render
+    filtered.forEach((a) => this._bindCardEvents(a.id));
+  },
+
+  /* ---- card HTML template ---- */
+  _cardHTML(a) {
+    const expanded = this.expandedIds.has(a.id);
+    const photos = a.photos || [];
+
+    const descHTML = a.description
+      ? `<div class="description-section">
+           <div class="description-label">景点介绍</div>
+           <p class="description">${esc(a.description)}</p>
+         </div>`
+      : '';
+
+    const visitDetailsHTML = a.visited
+      ? `<div class="visit-details">
+           <h4>📝 我的打卡记录</h4>
+           <textarea
+             class="notes-input"
+             data-id="${a.id}"
+             placeholder="写下你的游览感受、评分或注意事项…"
+             aria-label="游览感受"
+           >${esc(a.notes)}</textarea>
+
+           <div class="photo-section">
+             <h4>📷 打卡照片</h4>
+             <div class="photo-grid" id="photos-${a.id}">
+               ${photos
+                 .map(
+                   (src, idx) => `
+                 <div class="photo-item">
+                   <img src="${esc(src)}" alt="打卡照片 ${idx + 1}"
+                        data-src="${esc(src)}" class="photo-thumb">
+                   <button class="photo-delete" data-id="${a.id}" data-idx="${idx}"
+                           aria-label="删除照片">✕</button>
+                 </div>`
+                 )
+                 .join('')}
+               <label class="photo-add" title="添加照片" aria-label="添加照片">
+                 <input type="file" accept="image/*" multiple hidden
+                        class="photo-upload-input" data-id="${a.id}">
+                 <span class="photo-add-icon">＋</span>
+                 <span class="photo-add-text">添加照片</span>
+               </label>
+             </div>
+           </div>
+         </div>`
+      : `<div class="unvisited-hint">勾选左侧方框后，可在此记录游览感受和照片</div>`;
+
+    return `
+      <div class="attraction-card ${a.visited ? 'visited' : ''}" id="card-${a.id}">
+        <div class="card-header">
+          <label class="checkbox-container" aria-label="标记已打卡">
+            <input type="checkbox" class="visit-checkbox" data-id="${a.id}"
+                   ${a.visited ? 'checked' : ''}>
+            <span class="checkmark"></span>
+          </label>
+          <div class="card-title-area">
+            <h3 class="attraction-name ${a.visited ? 'visited-name' : ''}">
+              ${esc(a.name)}
+            </h3>
+            ${a.visitDate ? `<span class="visit-date">📅 打卡时间：${esc(a.visitDate)}</span>` : ''}
+          </div>
+          <button class="expand-btn" data-id="${a.id}"
+                  aria-expanded="${expanded}"
+                  aria-label="${expanded ? '收起详情' : '展开详情'}">
+            ${expanded ? '▲' : '▼'}
+          </button>
+        </div>
+        <div class="card-body ${expanded ? 'expanded' : 'collapsed'}">
+          ${descHTML}
+          ${visitDetailsHTML}
+        </div>
+      </div>`;
+  },
+
+  /* ---- bind per-card events ---- */
+  _bindCardEvents(id) {
+    const card = document.getElementById(`card-${id}`);
+    if (!card) return;
+
+    /* Expand / collapse button */
+    const expandBtn = card.querySelector('.expand-btn');
+    if (expandBtn) {
+      expandBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._toggleExpand(id);
+      });
+    }
+
+    /* Clicking on title also toggles */
+    const titleArea = card.querySelector('.card-title-area');
+    if (titleArea) {
+      titleArea.addEventListener('click', () => this._toggleExpand(id));
+    }
+
+    /* Checkbox */
+    const checkbox = card.querySelector('.visit-checkbox');
+    if (checkbox) {
+      checkbox.addEventListener('change', () => this._toggleVisit(id, checkbox.checked));
+    }
+
+    /* Notes textarea — debounced save */
+    const textarea = card.querySelector('.notes-input');
+    if (textarea) {
+      let timer;
+      textarea.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          this.attractions = Store.update(id, { notes: textarea.value });
+        }, 500);
+      });
+    }
+
+    /* Photo thumbnails — open lightbox */
+    card.querySelectorAll('.photo-thumb').forEach((img) => {
+      img.addEventListener('click', () => this._openLightbox(img.dataset.src));
+    });
+
+    /* Photo delete buttons */
+    card.querySelectorAll('.photo-delete').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._deletePhoto(Number(btn.dataset.id), Number(btn.dataset.idx));
+      });
+    });
+
+    /* Photo upload input */
+    const uploadInput = card.querySelector('.photo-upload-input');
+    if (uploadInput) {
+      uploadInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+          this._uploadPhotos(id, e.target.files);
+          e.target.value = '';
+        }
+      });
+    }
+  },
+
+  /* ---- expand / collapse ---- */
+  _toggleExpand(id) {
+    if (this.expandedIds.has(id)) {
+      this.expandedIds.delete(id);
+    } else {
+      this.expandedIds.add(id);
+    }
+    // In-place DOM update — no full re-render needed
+    const card = document.getElementById(`card-${id}`);
+    if (!card) return;
+    const body = card.querySelector('.card-body');
+    const btn = card.querySelector('.expand-btn');
+    const isNowExpanded = this.expandedIds.has(id);
+    if (body) {
+      body.classList.toggle('expanded', isNowExpanded);
+      body.classList.toggle('collapsed', !isNowExpanded);
+    }
+    if (btn) {
+      btn.textContent = isNowExpanded ? '▲' : '▼';
+      btn.setAttribute('aria-expanded', String(isNowExpanded));
+      btn.setAttribute('aria-label', isNowExpanded ? '收起详情' : '展开详情');
+    }
+  },
+
+  /* ---- mark visited / unvisited ---- */
+  _toggleVisit(id, visited) {
+    // Flush any pending notes before re-render
+    const textarea = document.querySelector(`.notes-input[data-id="${id}"]`);
+    if (textarea) {
+      Store.update(id, { notes: textarea.value });
+    }
+
+    const visitDate = visited ? new Date().toLocaleDateString('zh-CN') : null;
+    this.attractions = Store.update(id, { visited, visitDate });
+
+    // Auto-expand when marking visited so user can add notes/photos immediately
+    if (visited) this.expandedIds.add(id);
+
+    this._renderStats();
+    this._renderList();
+  },
+
+  /* ---- photo upload ---- */
+  async _uploadPhotos(id, files) {
+    const attraction = this.attractions.find((a) => a.id === id);
+    if (!attraction) return;
+    const photos = [...(attraction.photos || [])];
+
+    const readers = Array.from(files).map(
+      (f) =>
+        new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = (e) => resolve(e.target.result);
+          r.onerror = reject;
+          r.readAsDataURL(f);
+        })
+    );
+
+    try {
+      const results = await Promise.all(readers);
+      results.forEach((dataUrl) => photos.push(dataUrl));
+      this.attractions = Store.update(id, { photos });
+      this._renderList();
+    } catch (e) {
+      console.error(e);
+      alert('照片上传失败，请重试。');
+    }
+  },
+
+  /* ---- photo delete ---- */
+  _deletePhoto(id, idx) {
+    const attraction = this.attractions.find((a) => a.id === id);
+    if (!attraction) return;
+    const photos = [...(attraction.photos || [])];
+    photos.splice(idx, 1);
+    this.attractions = Store.update(id, { photos });
+    this._renderList();
+  },
+
+  /* ---- lightbox ---- */
+  _openLightbox(src) {
+    document.getElementById('modalImage').src = src;
+    document.getElementById('photoModal').hidden = false;
+  },
+};
+
+/* ------------------------------------------------------------------
+   5. Bootstrap
+------------------------------------------------------------------ */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => App.init());
+} else {
+  App.init();
+}
