@@ -9,6 +9,7 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 - **📖 Collapsible Descriptions** — Click the ▼ button or the attraction title to expand/collapse the description, keeping the list compact
 - **📝 Visit Notes** — After checking in, write your personal impressions in a notes field that auto-saves as you type
 - **📷 Photo Upload** — Upload multiple photos per attraction; thumbnails are displayed in a gallery with a full-screen lightbox view
+- **🏷️ Multi-level Tags** — Word heading levels (H1–H5) are recognized and attached to attractions as hierarchical tags
 - **🔍 Filter View** — Switch between All / Visited / Unvisited to focus on what matters
 - **📊 Progress Bar** — A real-time progress bar in the header shows how many attractions you've ticked off
 - **💾 Persistent Storage** — All data (check-in status, notes, photos) is saved in browser `localStorage` and survives page refreshes
@@ -18,7 +19,7 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 | Format | Parsing Strategy |
 |--------|-----------------|
 | **Excel** (.xlsx / .xls) | First column = attraction name; second column = description. A header row is detected automatically. |
-| **Word** (.docx) | Headings (H1–H5) become attraction names; following paragraphs become descriptions. Numbered items (`1. Name`) are also recognized. |
+| **Word** (.docx) | Numbered items (`1. Name`) are recognized as attractions; heading levels (H1–H5) are recognized as hierarchical attraction tags; following paragraphs become descriptions. |
 | **PDF** | Numbered items (`1. Name`) are recognized as attractions; subsequent lines become the description. |
 
 ## Getting Started

@@ -37,10 +37,22 @@ const Store = {
   addBatch(newItems) {
     const existing = this.getAll();
     const maxId = existing.reduce((m, a) => Math.max(m, a.id || 0), 0);
+    const normalizeTags = (tags) => {
+      if (!Array.isArray(tags)) return [];
+      return tags
+        .map((tag) => {
+          if (!tag || !tag.name) return null;
+          const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
+          const name = String(tag.name).trim();
+          return name ? { level, name } : null;
+        })
+        .filter(Boolean);
+    };
     const mapped = newItems.map((item, i) => ({
       id: maxId + i + 1,
       name: item.name || '未命名景点',
       description: item.description || '',
+      tags: normalizeTags(item.tags),
       visited: false,
       visitDate: null,
       notes: '',
@@ -78,7 +90,20 @@ const Parser = {
   _buildAttractions(nameDescPairs) {
     return nameDescPairs
       .filter((p) => p.name && p.name.trim())
-      .map((p) => ({ name: p.name.trim(), description: (p.description || '').trim() }));
+      .map((p) => ({
+        name: p.name.trim(),
+        description: (p.description || '').trim(),
+        tags: Array.isArray(p.tags)
+          ? p.tags
+              .map((tag) => {
+                if (!tag || !tag.name) return null;
+                const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
+                const name = String(tag.name).trim();
+                return name ? { level, name } : null;
+              })
+              .filter(Boolean)
+          : [],
+      }));
   },
 
   /* -------- Excel -------- */
@@ -118,6 +143,8 @@ const Parser = {
 
     const pairs = [];
     let current = null;
+    const headingStack = [];
+    const currentTags = () => headingStack.filter(Boolean).map((h) => ({ ...h }));
 
     for (const el of div.querySelectorAll('h1,h2,h3,h4,h5,p,li')) {
       const tag = el.tagName.toLowerCase();
@@ -126,17 +153,20 @@ const Parser = {
 
       if (['h1', 'h2', 'h3', 'h4', 'h5'].includes(tag)) {
         if (current) pairs.push(current);
-        current = { name: text, description: '' };
+        current = null;
+        const level = Number(tag.slice(1));
+        headingStack[level - 1] = { level, name: text };
+        headingStack.length = level; // drop deeper headings when entering a shallower one
       } else {
         const numbered = this._numberedLine(text);
         if (numbered) {
           if (current) pairs.push(current);
-          current = { name: numbered, description: '' };
+          current = { name: numbered, description: '', tags: currentTags() };
         } else if (current) {
           current.description += (current.description ? '\n' : '') + text;
         } else {
           // First plain paragraph — treat it as an attraction name
-          current = { name: text, description: '' };
+          current = { name: text, description: '', tags: currentTags() };
         }
       }
     }
@@ -374,6 +404,17 @@ const App = {
   _cardHTML(a) {
     const expanded = this.expandedIds.has(a.id);
     const photos = a.photos || [];
+    const tags = Array.isArray(a.tags) ? a.tags : [];
+    const tagsHTML = tags.length
+      ? `<div class="tag-list">
+           ${tags
+             .map((tag) => {
+               const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
+               return `<span class="tag-badge level-${level}">H${level} · ${esc(tag.name)}</span>`;
+             })
+             .join('')}
+         </div>`
+      : '';
 
     const descHTML = a.description
       ? `<div class="description-section">
@@ -429,6 +470,7 @@ const App = {
             <h3 class="attraction-name ${a.visited ? 'visited-name' : ''}">
               ${esc(a.name)}
             </h3>
+            ${tagsHTML}
             ${a.visitDate ? `<span class="visit-date">📅 打卡时间：${esc(a.visitDate)}</span>` : ''}
           </div>
           <button class="expand-btn" data-id="${a.id}"
