@@ -121,9 +121,7 @@ const AuthService = {
         if (!signInResp.error) return { ok: true, message: '登录成功' };
 
         const signInErrorText = String(signInResp.error.message || '');
-        const canTrySignUp = /invalid login credentials|user not found|not registered/i.test(
-          signInErrorText.toLowerCase()
-        );
+        const canTrySignUp = /invalid login credentials|user not found|not registered/i.test(signInErrorText);
         if (!canTrySignUp) return { ok: false, message: signInErrorText || '登录失败' };
 
         const signUpResp = await this.client.auth.signUp({
@@ -132,7 +130,7 @@ const AuthService = {
         });
         if (signUpResp.error) {
           const signUpErrorText = String(signUpResp.error.message || '');
-          if (/already registered/i.test(signUpErrorText.toLowerCase())) {
+          if (/already registered/i.test(signUpErrorText)) {
             return { ok: false, message: '账号已存在或密码错误，请重试。' };
           }
           return { ok: false, message: signUpErrorText || '注册失败' };
