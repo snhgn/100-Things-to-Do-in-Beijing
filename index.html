@@ -25,9 +25,13 @@
         <div class="stats" id="stats">已打卡: 0 / 0</div>
         <div class="account-entry">
           <span id="databaseLabel">数据库: 本地</span>
-          <select id="databaseSelect" aria-label="选择云端数据库槽位" disabled></select>
-          <span id="authStatus">游客模式</span>
-          <button class="btn-link" id="authEntryBtn">👤 账号</button>
+          <form id="databaseSwitchForm" class="database-switch-form">
+            <input type="text" id="databaseNameInput" list="databaseNameList" placeholder="输入数据库名字" autocomplete="off" aria-label="输入数据库名字">
+            <datalist id="databaseNameList"></datalist>
+            <button class="btn-link" id="databaseSwitchBtn" type="submit">切换</button>
+          </form>
+          <span id="authStatus">本地模式</span>
+          <button class="btn-link" id="databaseNameEntryBtn">✏️ 名称</button>
         </div>
       </div>
     </header>
@@ -124,16 +128,15 @@
     <div class="auth-modal-backdrop" id="authModalBackdrop"></div>
     <div class="auth-modal-content">
       <button class="modal-close" id="authModalClose" aria-label="关闭">✕</button>
-      <h2>账号登录</h2>
-      <p class="auth-hint" id="authHint">邮箱可不填密码：将发送一次性登录链接。</p>
-      <form id="authForm">
-        <input type="email" id="authEmail" placeholder="邮箱（必填）" autocomplete="email" required>
-        <input type="password" id="authPassword" placeholder="密码（可选）" autocomplete="current-password">
-        <button type="submit" class="btn-primary auth-submit">邮箱登录 / 注册</button>
+      <h2>数据库名称管理</h2>
+      <p class="auth-hint" id="authHint">可编辑 10 个数据库名字；首页输入数据库名字即可切换。</p>
+      <form id="databaseRenameForm">
+        <select id="databaseRenameSlot" aria-label="选择要重命名的数据库"></select>
+        <input type="text" id="databaseRenameInput" placeholder="输入新的数据库名字" maxlength="30" aria-label="输入新的数据库名字" required>
+        <button type="submit" class="btn-primary auth-submit">保存数据库名字</button>
       </form>
       <div class="auth-actions">
-        <button class="btn-secondary" id="authAnonymousBtn">使用游客账号</button>
-        <button class="btn-secondary btn-danger" id="authLogoutBtn">退出登录</button>
+        <button class="btn-secondary" id="authModalDoneBtn">完成</button>
       </div>
     </div>
   </div>

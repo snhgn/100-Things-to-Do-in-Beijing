@@ -8,6 +8,7 @@ const AuthService = {
   CLOUD_DB_TABLE: 'attraction_databases',
   CLOUD_DB_COUNT: 10,
   CLOUD_DB_SLOT_KEY: 'beijing_cloud_db_slot_v1',
+  CLOUD_DB_NAMES_KEY: 'beijing_cloud_db_names_v1',
   client: null,
   user: null,
   enabled: false,
@@ -95,6 +96,72 @@ const AuthService = {
     return normalized;
   },
 
+  _defaultDatabaseNames() {
+    return Array.from({ length: this.CLOUD_DB_COUNT }, (_, i) => `库 ${i + 1}`);
+  },
+
+  getDatabaseNames() {
+    try {
+      const raw = localStorage.getItem(this.CLOUD_DB_NAMES_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!Array.isArray(parsed)) return this._defaultDatabaseNames();
+      const defaults = this._defaultDatabaseNames();
+      return defaults.map((fallback, idx) => {
+        const name = String(parsed[idx] || '').trim();
+        return name || fallback;
+      });
+    } catch (parseError) {
+      console.warn('Failed to read database names from local cache:', parseError);
+      return this._defaultDatabaseNames();
+    }
+  },
+
+  getDatabaseName(slot) {
+    const normalized = Number(slot);
+    if (!Number.isInteger(normalized) || normalized < 1 || normalized > this.CLOUD_DB_COUNT) {
+      return '';
+    }
+    return this.getDatabaseNames()[normalized - 1];
+  },
+
+  setDatabaseName(slot, name) {
+    const normalizedSlot = Number(slot);
+    if (
+      !Number.isInteger(normalizedSlot) ||
+      normalizedSlot < 1 ||
+      normalizedSlot > this.CLOUD_DB_COUNT
+    ) {
+      return { ok: false, message: '数据库编号无效' };
+    }
+    const nextName = String(name || '').trim();
+    if (!nextName) return { ok: false, message: '数据库名字不能为空' };
+    if (nextName.length > 30) return { ok: false, message: '数据库名字不能超过 30 个字符' };
+
+    const names = this.getDatabaseNames();
+    const normalizedName = nextName.toLowerCase();
+    const duplicate = names.findIndex(
+      (item, idx) => idx !== normalizedSlot - 1 && item.toLowerCase() === normalizedName
+    );
+    if (duplicate !== -1) return { ok: false, message: '数据库名字已存在，请使用其他名字' };
+
+    names[normalizedSlot - 1] = nextName;
+    try {
+      localStorage.setItem(this.CLOUD_DB_NAMES_KEY, JSON.stringify(names));
+      return { ok: true, message: '数据库名字已更新', names };
+    } catch (persistError) {
+      console.warn('Failed to save database names to local cache:', persistError);
+      return { ok: false, message: '保存失败，请稍后重试' };
+    }
+  },
+
+  findDatabaseSlotByName(name) {
+    const normalized = String(name || '').trim().toLowerCase();
+    if (!normalized) return null;
+    const names = this.getDatabaseNames();
+    const idx = names.findIndex((item) => item.toLowerCase() === normalized);
+    return idx === -1 ? null : idx + 1;
+  },
+
   getSafeRedirectUrl() {
     return `${window.location.origin}${window.location.pathname}`;
   },
@@ -116,69 +183,6 @@ const AuthService = {
     if (error) return { ok: false, message: error.message };
     this.user = data?.user || null;
     return { ok: true, message: '已切换到游客账号' };
-  },
-
-  async signInOrSignUp(email, password) {
-    if (!this.enabled) return { ok: false, message: '未配置 Supabase' };
-    const normalizedEmail = String(email || '').trim();
-    const pass = String(password || '').trim();
-    if (!normalizedEmail) return { ok: false, message: '请输入邮箱' };
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(normalizedEmail)) return { ok: false, message: '邮箱格式不正确' };
-
-    try {
-      const current = this.getUser();
-      if (current?.is_anonymous) {
-        const updatePayload = pass
-          ? { email: normalizedEmail, password: pass }
-          : { email: normalizedEmail };
-        const { error: updateError } = await this.client.auth.updateUser(updatePayload);
-        if (updateError) return { ok: false, message: updateError.message };
-        if (!pass) {
-          const { error: otpError } = await this.client.auth.signInWithOtp({
-            email: normalizedEmail,
-            options: { emailRedirectTo: this.getSafeRedirectUrl() },
-          });
-          if (otpError) return { ok: false, message: otpError.message };
-          return { ok: true, message: '已发送登录链接，请查收邮箱完成绑定。' };
-        }
-        return { ok: true, message: '账号已绑定邮箱。' };
-      }
-
-      if (pass) {
-        const signInResp = await this.client.auth.signInWithPassword({
-          email: normalizedEmail,
-          password: pass,
-        });
-        if (!signInResp.error) return { ok: true, message: '登录成功' };
-
-        const signInErrorText = String(signInResp.error.message || '');
-        const canTrySignUp = /invalid login credentials|user not found|not registered/i.test(signInErrorText);
-        if (!canTrySignUp) return { ok: false, message: signInErrorText || '登录失败' };
-
-        const signUpResp = await this.client.auth.signUp({
-          email: normalizedEmail,
-          password: pass,
-        });
-        if (signUpResp.error) {
-          const signUpErrorText = String(signUpResp.error.message || '');
-          if (/already registered/i.test(signUpErrorText)) {
-            return { ok: false, message: '账号已存在或密码错误，请重试。' };
-          }
-          return { ok: false, message: signUpErrorText || '注册失败' };
-        }
-        return { ok: true, message: '已注册，请按邮箱提示完成验证。' };
-      }
-
-      const { error: otpError } = await this.client.auth.signInWithOtp({
-        email: normalizedEmail,
-        options: { emailRedirectTo: this.getSafeRedirectUrl() },
-      });
-      if (otpError) return { ok: false, message: otpError.message };
-      return { ok: true, message: '已发送登录链接，请查收邮箱。' };
-    } catch (err) {
-      return { ok: false, message: err.message || '登录失败' };
-    }
   },
 
   async logout() {
