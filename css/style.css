@@ -16,6 +16,11 @@
   --visited-border: #27ae60;
   --success: #27ae60;
   --danger: #e74c3c;
+  --tag-level-1: #d35400;
+  --tag-level-2: #e67e22;
+  --tag-level-3: #3498db;
+  --tag-level-4: #2ecc71;
+  --tag-level-5: #9b59b6;
   --radius: 12px;
   --radius-sm: 8px;
   --transition: all 0.25s ease;
@@ -517,23 +522,23 @@ header h1 {
 }
 
 .tag-badge.level-1 {
-  border-left: 3px solid #d35400;
+  border-left: 3px solid var(--tag-level-1);
 }
 
 .tag-badge.level-2 {
-  border-left: 3px solid #e67e22;
+  border-left: 3px solid var(--tag-level-2);
 }
 
 .tag-badge.level-3 {
-  border-left: 3px solid #3498db;
+  border-left: 3px solid var(--tag-level-3);
 }
 
 .tag-badge.level-4 {
-  border-left: 3px solid #2ecc71;
+  border-left: 3px solid var(--tag-level-4);
 }
 
 .tag-badge.level-5 {
-  border-left: 3px solid #9b59b6;
+  border-left: 3px solid var(--tag-level-5);
 }
 
 /* ===== Expand Button ===== */
