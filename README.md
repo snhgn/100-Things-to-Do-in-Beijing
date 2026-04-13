@@ -17,7 +17,7 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 - **📊 Progress Bar** — A real-time progress bar in the header shows how many attractions you've ticked off
 - **💾 Persistent Storage** — All data (check-in status, notes, photos) is saved in browser `localStorage` and survives page refreshes
 - **👤 Optional-Password Account System** — Sign in with anonymous account or email (password optional via magic link)
-- **☁️ 10 Cloud Databases per Account** — Each account has 10 independent cloud databases; switch databases to view corresponding attractions, notes, and photos
+- **☁️ 10 Cloud Databases per Account** — Each account has 10 independent cloud databases; switching a database loads only that slot’s attractions, notes, and photos (current slot changes are auto-saved before/while switching via debounce sync)
 
 ## File Format Guide
 
