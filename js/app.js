@@ -145,10 +145,9 @@ const Parser = {
 
       if (['h1', 'h2', 'h3', 'h4', 'h5'].includes(tag)) {
         if (current) pairs.push(current);
-        current = null;
         const level = Number(tag.slice(1));
         headingStack[level - 1] = { level, name: text };
-        headingStack.length = level; // truncate stack to current level, removing deeper headings
+        headingStack.length = level; // truncate to current level (removing any deeper headings)
       } else {
         const numbered = this._numberedLine(text);
         if (numbered) {
