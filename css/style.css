@@ -367,6 +367,53 @@ header h1 {
   display: block;
 }
 
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tag-badge {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  border-radius: 999px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.tag-badge.level-1 {
+  background: #fdecea;
+  color: #a93226;
+  border-color: #f5c6c1;
+}
+
+.tag-badge.level-2 {
+  background: #fef5e7;
+  color: #af601a;
+  border-color: #f9e79f;
+}
+
+.tag-badge.level-3 {
+  background: #ebf5fb;
+  color: #1f618d;
+  border-color: #aed6f1;
+}
+
+.tag-badge.level-4 {
+  background: #eafaf1;
+  color: #196f3d;
+  border-color: #a9dfbf;
+}
+
+.tag-badge.level-5 {
+  background: #f4ecf7;
+  color: #6c3483;
+  border-color: #d2b4de;
+}
+
 /* ===== Expand Button ===== */
 .expand-btn {
   background: none;
