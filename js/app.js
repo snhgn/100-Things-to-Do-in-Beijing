@@ -271,6 +271,7 @@ const App = {
   init() {
     this.attractions = Store.getAll();
     this._bindGlobalEvents();
+    // First-time bootstrap only: preload bundled checklist when local storage is empty.
     if (!this.attractions.length && Array.isArray(window.DEFAULT_ATTRACTIONS)) {
       this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
     }
