@@ -270,6 +270,7 @@ const App = {
   attractions: [],   // in-memory mirror of Store
   filter: 'all',
   tagFilter: null,
+  searchQuery: '',
   expandedIds: new Set(), // IDs of expanded cards
   cloudSyncEnabled: false,
   cloudSyncWarned: false,
@@ -314,6 +315,22 @@ const App = {
       e.preventDefault();
       dropZone.classList.remove('drag-over');
       if (e.dataTransfer.files.length) this._handleFile(e.dataTransfer.files[0]);
+    });
+
+    /* Search input */
+    const searchInput = document.getElementById('searchInput');
+    const searchClearBtn = document.getElementById('searchClearBtn');
+    searchInput.addEventListener('input', () => {
+      this.searchQuery = searchInput.value;
+      searchClearBtn.hidden = !this.searchQuery;
+      this._renderList();
+    });
+    searchClearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      this.searchQuery = '';
+      searchClearBtn.hidden = true;
+      searchInput.focus();
+      this._renderList();
     });
 
     /* Toolbar buttons */
@@ -559,21 +576,44 @@ const App = {
   /* ---- list render ---- */
   _renderList() {
     const list = document.getElementById('attractionsList');
+    const keywords = this.searchQuery
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((k) => k.toLowerCase());
+
     const filtered = this.attractions.filter((a) => {
       const statusMatched =
         this.filter === 'visited' ? a.visited : this.filter === 'unvisited' ? !a.visited : true;
       if (!statusMatched) return false;
-      if (!this.tagFilter) return true;
-      const tags = normalizeTagList(a.tags);
-      const keySet = new Set(tags.map((t) => this._tagKey(t.level, t.name)));
-      return keySet.has(this.tagFilter);
+      if (this.tagFilter) {
+        const tags = normalizeTagList(a.tags);
+        const keySet = new Set(tags.map((t) => this._tagKey(t.level, t.name)));
+        if (!keySet.has(this.tagFilter)) return false;
+      }
+      if (keywords.length) {
+        const haystack = [
+          a.name,
+          a.description,
+          ...normalizeTagList(a.tags).map((t) => t.name),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return keywords.every((kw) => haystack.includes(kw));
+      }
+      return true;
     });
 
     if (!filtered.length) {
+      const msg = keywords.length
+        ? `未找到与"${esc(this.searchQuery.trim())}"相关的景点`
+        : this.tagFilter
+        ? '该标签下暂无景点'
+        : '暂无景点数据';
       list.innerHTML = `
         <div class="empty-state">
           <span class="empty-state-icon">🗺️</span>
-          ${this.tagFilter ? '该标签下暂无景点' : '暂无景点数据'}
+          ${msg}
         </div>`;
       return;
     }
