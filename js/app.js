@@ -47,6 +47,10 @@ const Store = {
     return list;
   },
 
+  replaceAll(list) {
+    return this._persist(Array.isArray(list) ? list : []);
+  },
+
   addBatch(newItems) {
     const existing = this.getAll();
     const maxId = existing.reduce((m, a) => Math.max(m, a.id || 0), 0);
@@ -267,9 +271,10 @@ const App = {
   filter: 'all',
   tagFilter: null,
   expandedIds: new Set(), // IDs of expanded cards
+  cloudSyncEnabled: false,
 
   /* ---- init ---- */
-  init() {
+  async init() {
     this.attractions = Store.getAll();
     this._bindGlobalEvents();
     // First-time bootstrap only: preload bundled checklist when local storage is empty.
@@ -280,6 +285,7 @@ const App = {
     ) {
       this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
     }
+    await this._initAuth();
     this.render();
   },
 
@@ -310,7 +316,17 @@ const App = {
     });
 
     /* Toolbar buttons */
+    document.getElementById('manageBtn').addEventListener('click', () => {
+      this._openManagerDrawer();
+    });
+    document.getElementById('managerDrawerClose').addEventListener('click', () => {
+      this._closeManagerDrawer();
+    });
+    document.getElementById('managerDrawerBackdrop').addEventListener('click', () => {
+      this._closeManagerDrawer();
+    });
     document.getElementById('importMoreBtn').addEventListener('click', () => {
+      this._closeManagerDrawer();
       document.getElementById('attractionsSection').hidden = true;
       document.getElementById('importSection').hidden = false;
     });
@@ -349,6 +365,42 @@ const App = {
       this._deleteAttraction();
     });
 
+    /* Account / auth modal */
+    document.getElementById('authEntryBtn').addEventListener('click', () => {
+      this._openAuthModal();
+    });
+    document.getElementById('authModalClose').addEventListener('click', () => {
+      this._closeAuthModal();
+    });
+    document.getElementById('authModalBackdrop').addEventListener('click', () => {
+      this._closeAuthModal();
+    });
+    document.getElementById('authForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value;
+      const result = await window.AuthService.signInOrSignUp(email, password);
+      alert(result.message);
+      if (result.ok) this._closeAuthModal();
+      this._refreshAuthUI();
+      if (result.ok) await this._syncCheckinsFromCloud();
+      this.render();
+    });
+    document.getElementById('authAnonymousBtn').addEventListener('click', async () => {
+      const result = await window.AuthService.useAnonymous();
+      alert(result.message);
+      this._refreshAuthUI();
+      if (result.ok) await this._syncCheckinsFromCloud();
+      this.render();
+    });
+    document.getElementById('authLogoutBtn').addEventListener('click', async () => {
+      const result = await window.AuthService.logout();
+      alert(result.message);
+      this._refreshAuthUI();
+      if (result.ok) await this._syncCheckinsFromCloud();
+      this.render();
+    });
+
     /* Photo lightbox close */
     document.getElementById('modalBackdrop').addEventListener('click', () => {
       document.getElementById('photoModal').hidden = true;
@@ -357,8 +409,97 @@ const App = {
       document.getElementById('photoModal').hidden = true;
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') document.getElementById('photoModal').hidden = true;
+      if (e.key !== 'Escape') return;
+      document.getElementById('photoModal').hidden = true;
+      this._closeManagerDrawer();
+      this._closeAuthModal();
     });
+  },
+
+  async _initAuth() {
+    if (!window.AuthService) {
+      this.cloudSyncEnabled = false;
+      this._refreshAuthUI();
+      return;
+    }
+    const enabled = await window.AuthService.init();
+    this.cloudSyncEnabled = enabled;
+    this._refreshAuthUI();
+
+    if (!enabled) return;
+
+    window.AuthService.onAuthStateChange(async () => {
+      this._refreshAuthUI();
+      await this._syncCheckinsFromCloud();
+      this._renderStats();
+      this._renderList();
+    });
+
+    await this._syncCheckinsFromCloud();
+  },
+
+  _refreshAuthUI() {
+    const status = document.getElementById('authStatus');
+    const hint = document.getElementById('authHint');
+    const logoutBtn = document.getElementById('authLogoutBtn');
+    const anonymousBtn = document.getElementById('authAnonymousBtn');
+
+    if (!this.cloudSyncEnabled || !window.AuthService) {
+      status.textContent = '本地模式';
+      hint.textContent = '未配置 Supabase，当前为本地存储模式。';
+      logoutBtn.disabled = true;
+      anonymousBtn.disabled = true;
+      return;
+    }
+
+    const user = window.AuthService.getUser();
+    status.textContent = window.AuthService.getUserLabel();
+    hint.textContent = user?.is_anonymous
+      ? '当前为游客账号，可填写邮箱（密码可选）升级为个人账号。'
+      : '已登录云端账号，你的打卡记录会在同账号下同步。';
+    logoutBtn.disabled = !user;
+    anonymousBtn.disabled = !!user?.is_anonymous;
+  },
+
+  async _syncCheckinsFromCloud() {
+    if (!this.cloudSyncEnabled || !window.AuthService) return;
+    const checkins = await window.AuthService.loadCheckins();
+    if (!(checkins instanceof Map)) return;
+    this.attractions = Store.replaceAll(
+      this.attractions.map((a) => {
+        const checkedAt = checkins.get(Number(a.id));
+        if (!checkedAt) {
+          return { ...a, visited: false, visitDate: null };
+        }
+        return { ...a, visited: true, visitDate: checkedAt };
+      })
+    );
+  },
+
+  async _syncVisitToCloud(id, visited, visitDate) {
+    if (!this.cloudSyncEnabled || !window.AuthService) return;
+    const ok = visited
+      ? await window.AuthService.setCheckin(id, visitDate)
+      : await window.AuthService.removeCheckin(id);
+    if (!ok) {
+      console.warn('云端同步失败，已保留本地结果。');
+    }
+  },
+
+  _openManagerDrawer() {
+    document.getElementById('managerDrawer').hidden = false;
+  },
+
+  _closeManagerDrawer() {
+    document.getElementById('managerDrawer').hidden = true;
+  },
+
+  _openAuthModal() {
+    document.getElementById('authModal').hidden = false;
+  },
+
+  _closeAuthModal() {
+    document.getElementById('authModal').hidden = true;
   },
 
   /* ---- file handling ---- */
@@ -612,6 +753,7 @@ const App = {
 
     const visitDate = visited ? new Date().toLocaleDateString('zh-CN') : null;
     this.attractions = Store.update(id, { visited, visitDate });
+    this._syncVisitToCloud(id, visited, visitDate);
 
     // Auto-expand when marking visited so user can add notes/photos immediately
     if (visited) this.expandedIds.add(id);
