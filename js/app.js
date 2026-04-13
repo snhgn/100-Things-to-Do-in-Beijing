@@ -494,6 +494,8 @@ const App = {
         this.cloudSyncWarned = true;
         alert('云端同步失败，当前仅保存在本地浏览器。');
       }
+    } else {
+      this.cloudSyncWarned = false;
     }
   },
 

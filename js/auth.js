@@ -91,6 +91,8 @@ const AuthService = {
     const normalizedEmail = String(email || '').trim();
     const pass = String(password || '').trim();
     if (!normalizedEmail) return { ok: false, message: '请输入邮箱' };
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) return { ok: false, message: '邮箱格式不正确' };
 
     try {
       const current = this.getUser();
@@ -118,11 +120,23 @@ const AuthService = {
         });
         if (!signInResp.error) return { ok: true, message: '登录成功' };
 
+        const signInErrorText = String(signInResp.error.message || '');
+        const canTrySignUp = /invalid login credentials|user not found|not registered/i.test(
+          signInErrorText.toLowerCase()
+        );
+        if (!canTrySignUp) return { ok: false, message: signInErrorText || '登录失败' };
+
         const signUpResp = await this.client.auth.signUp({
           email: normalizedEmail,
           password: pass,
         });
-        if (signUpResp.error) return { ok: false, message: signUpResp.error.message };
+        if (signUpResp.error) {
+          const signUpErrorText = String(signUpResp.error.message || '');
+          if (/already registered/i.test(signUpErrorText.toLowerCase())) {
+            return { ok: false, message: '账号已存在或密码错误，请重试。' };
+          }
+          return { ok: false, message: signUpErrorText || '注册失败' };
+        }
         return { ok: true, message: '已注册，请按邮箱提示完成验证。' };
       }
 
