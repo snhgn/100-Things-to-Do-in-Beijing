@@ -390,7 +390,7 @@ const App = {
     });
 
     /* Account / auth modal */
-    document.getElementById('authEntryBtn').addEventListener('click', () => {
+    document.getElementById('databaseNameEntryBtn').addEventListener('click', () => {
       this._openAuthModal();
     });
     document.getElementById('authModalClose').addEventListener('click', () => {
@@ -502,7 +502,7 @@ const App = {
     if (!this.cloudSyncEnabled || !window.AuthService) return;
     const slot = window.AuthService.findDatabaseSlotByName(name);
     if (!slot) {
-      alert('未找到该数据库名字，请先在“名称”中编辑后再切换。');
+      alert('未找到该数据库名字，请先在“数据库名称管理”中将某个数据库重命名为该名字。');
       return;
     }
     await this._switchCloudDatabase(slot);
