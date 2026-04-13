@@ -210,6 +210,20 @@ header h1 {
   color: var(--danger);
 }
 
+.btn-link {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
 /* ===== Attractions Section ===== */
 .attractions-section {
   max-width: 860px;
@@ -221,7 +235,7 @@ header h1 {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 24px;
+   margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
@@ -252,6 +266,122 @@ header h1 {
 .filter-btn:not(.active):hover {
   border-color: var(--primary);
   color: var(--primary);
+}
+
+/* ===== Tag Browser ===== */
+.tag-browser {
+  background: linear-gradient(180deg, #fff7f2 0%, #fff 100%);
+  border: 1px solid #f3d3c8;
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px var(--shadow);
+  padding: 14px 16px 16px;
+  margin-bottom: 16px;
+}
+
+.tag-browser-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tag-browser-head h2 {
+  font-size: 1rem;
+}
+
+.tag-browser-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-pill {
+  border: 1px solid #f1b8a4;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: #fff;
+  color: #8f3d2f;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: var(--transition);
+}
+
+.tag-pill:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.tag-pill.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.tag-pill-empty {
+  font-size: 0.82rem;
+  color: var(--text-light);
+}
+
+/* ===== Content Manager ===== */
+.content-manager {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 18px;
+  background: #fff;
+}
+
+.content-manager h2 {
+  font-size: 1rem;
+  margin-bottom: 12px;
+}
+
+.content-manager-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.add-form,
+.delete-panel {
+  border: 1px solid #eee6dc;
+  border-radius: var(--radius-sm);
+  background: #faf9f7;
+  padding: 12px;
+}
+
+.add-form h3,
+.delete-panel h3 {
+  font-size: 0.92rem;
+  margin-bottom: 10px;
+}
+
+.add-form input,
+.add-form textarea,
+.delete-panel select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  font-family: inherit;
+  margin-bottom: 8px;
+  font-size: 0.88rem;
+  background: #fff;
+}
+
+.add-form textarea {
+  resize: vertical;
+}
+
+.delete-panel button {
+  width: 100%;
+}
+
+.delete-panel button + button {
+  margin-top: 8px;
 }
 
 /* ===== Attraction Card ===== */
@@ -371,47 +501,39 @@ header h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+   margin-top: 8px;
 }
 
 .tag-badge {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   line-height: 1.2;
-  border-radius: 999px;
-  padding: 3px 9px;
-  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  border: 1px solid #f0d7cf;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
+  background: #fff9f6;
+  color: #7c4a3a;
 }
 
 .tag-badge.level-1 {
-  background: #fdecea;
-  color: #a93226;
-  border-color: #f5c6c1;
+  border-left: 3px solid #d35400;
 }
 
 .tag-badge.level-2 {
-  background: #fef5e7;
-  color: #af601a;
-  border-color: #f9e79f;
+  border-left: 3px solid #e67e22;
 }
 
 .tag-badge.level-3 {
-  background: #ebf5fb;
-  color: #1f618d;
-  border-color: #aed6f1;
+  border-left: 3px solid #3498db;
 }
 
 .tag-badge.level-4 {
-  background: #eafaf1;
-  color: #196f3d;
-  border-color: #a9dfbf;
+  border-left: 3px solid #2ecc71;
 }
 
 .tag-badge.level-5 {
-  background: #f4ecf7;
-  color: #6c3483;
-  border-color: #d2b4de;
+  border-left: 3px solid #9b59b6;
 }
 
 /* ===== Expand Button ===== */
@@ -747,5 +869,9 @@ header h1 {
 
   .photo-grid {
     grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  }
+
+  .content-manager-grid {
+    grid-template-columns: 1fr;
   }
 }
