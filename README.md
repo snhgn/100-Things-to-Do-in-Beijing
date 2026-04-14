@@ -49,6 +49,19 @@ No build tools are required — the app is plain HTML, CSS, and JavaScript.
 This project is a pure frontend app, so it **cannot connect to PostgreSQL directly from browser** safely.
 You need a small backend API (Azure Functions / App Service / Container App) between browser and Azure Database for PostgreSQL.
 
+A ready-to-run Node.js backend is included in this repository:
+
+- Backend code: `backend/server.js`
+- Backend setup guide: `backend/README.md`
+- SQL schema file: `backend/sql/init.sql`
+
+Quick start:
+
+1. `cd backend`
+2. `npm install`
+3. Copy `.env.example` to `.env` and fill your Azure PostgreSQL settings.
+4. `npm start`
+
 ### 1) Create table in Azure Database for PostgreSQL
 
 ```sql
