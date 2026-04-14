@@ -178,14 +178,14 @@ const AuthService = {
       return `device-${hex}`;
     }
 
-    throw new Error('当前浏览器不支持安全随机数，无法启用云端同步');
+    throw new Error('Secure random generation is unavailable; cloud sync cannot be enabled.');
   },
 
   getUserLabel() {
     if (!this.user) return '未连接';
     const id = String(this.user.id || '');
     if (!id) return '设备账号';
-    return `设备账号(${id.slice(0, 8)})`;
+    return `设备账号(${id.slice(0, Math.min(8, id.length))})`;
   },
 
   _buildUrl(path, query) {
@@ -226,7 +226,9 @@ const AuthService = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`HTTP ${response.status}${text ? `: ${text}` : ''}`);
+      throw new Error(
+        `HTTP ${method} ${path} failed with ${response.status}${text ? `: ${text}` : ''}`
+      );
     }
 
     if (response.status === 204) return null;
