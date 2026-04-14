@@ -1,15 +1,16 @@
 /* ============================================================
-   Supabase Auth + Check-in Sync
+   Cloud Sync Service (Custom REST API)
    ============================================================ */
 
 const VALID_PHOTO_DATA_URL_REGEX = /^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
 
 const AuthService = {
-  CLOUD_DB_TABLE: 'attraction_databases',
   CLOUD_DB_COUNT: 10,
   CLOUD_DB_SLOT_KEY: 'beijing_cloud_db_slot_v1',
   CLOUD_DB_NAMES_KEY: 'beijing_cloud_db_names_v1',
-  client: null,
+  CLOUD_USER_ID_KEY: 'beijing_cloud_user_id_v1',
+  apiBaseUrl: '',
+  apiKey: '',
   user: null,
   enabled: false,
   initialized: false,
@@ -19,42 +20,29 @@ const AuthService = {
     if (this.initialized) return this.enabled;
     this.initialized = true;
 
-    const config = window.SUPABASE_CONFIG || {};
-    const { url, anonKey } = config;
+    const config = window.CLOUD_SYNC_CONFIG || {};
+    const apiBaseUrl = String(config.apiBaseUrl || '').trim().replace(/\/+$/, '');
+    const apiKey = String(config.apiKey || '').trim();
 
-    if (!window.supabase || !url || !anonKey) {
+    if (!apiBaseUrl) {
       this.enabled = false;
       return false;
     }
 
+    this.apiBaseUrl = apiBaseUrl;
+    this.apiKey = apiKey;
+
+    const userId = this._resolveUserId(config.userId);
+    this.user = { id: userId, is_anonymous: true };
+
     try {
-      this.client = window.supabase.createClient(url, anonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-        },
-      });
-
-      const { data: sessionData, error: sessionError } = await this.client.auth.getSession();
-      if (sessionError) throw sessionError;
-
-      this.user = sessionData?.session?.user || null;
-      if (!this.user) {
-        const { data, error } = await this.client.auth.signInAnonymously();
-        if (error) throw error;
-        this.user = data?.user || null;
-      }
-
-      this.client.auth.onAuthStateChange((_event, session) => {
-        this.user = session?.user || null;
-        this.listeners.forEach((cb) => cb(this.user));
-      });
-
+      // Optional connectivity probe. Backend can skip implementation and this will be ignored.
+      await this._request('GET', '/health', { allowFailure: true });
       this.enabled = true;
+      this.listeners.forEach((cb) => cb(this.user));
       return true;
     } catch (err) {
-      console.error('Supabase initialization failed:', err);
+      console.error('Cloud sync initialization failed:', err);
       this.enabled = false;
       this.user = null;
       return false;
@@ -162,37 +150,92 @@ const AuthService = {
     return idx === -1 ? null : idx + 1;
   },
 
-  getSafeRedirectUrl() {
-    return `${window.location.origin}${window.location.pathname}`;
+  _resolveUserId(configUserId) {
+    const input = String(configUserId || '').trim();
+    if (input) return input;
+
+    try {
+      const cached = String(localStorage.getItem(this.CLOUD_USER_ID_KEY) || '').trim();
+      if (cached) return cached;
+
+      const generated = this._generateFallbackUserId();
+      localStorage.setItem(this.CLOUD_USER_ID_KEY, generated);
+      return generated;
+    } catch (_) {
+      return this._generateFallbackUserId();
+    }
+  },
+
+  _generateFallbackUserId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      return `device-${hex}`;
+    }
+
+    throw new Error('Secure random generation is unavailable; cloud sync cannot be enabled.');
   },
 
   getUserLabel() {
-    if (!this.user) return '未登录';
-    if (this.user.is_anonymous) return '游客账号';
-    return this.user.email || '已登录账号';
+    if (!this.user) return '未连接';
+    const id = String(this.user.id || '');
+    if (!id) return '设备账号';
+    return `设备账号(${id.slice(0, Math.min(8, id.length))})`;
   },
 
-  async useAnonymous() {
-    if (!this.enabled) return { ok: false, message: '未配置 Supabase' };
-    const current = await this.client.auth.getUser();
-    if (current?.data?.user?.is_anonymous) {
-      this.user = current.data.user;
-      return { ok: true, message: '当前已是游客账号' };
+  _buildUrl(path, query) {
+    const normalizedPath = String(path || '').replace(/^\/+/, '');
+    const url = new URL(normalizedPath, `${this.apiBaseUrl}/`);
+    if (query && typeof query === 'object') {
+      Object.entries(query).forEach(([key, value]) => {
+        if (value === undefined || value === null) return;
+        url.searchParams.set(key, String(value));
+      });
     }
-    const { data, error } = await this.client.auth.signInAnonymously();
-    if (error) return { ok: false, message: error.message };
-    this.user = data?.user || null;
-    return { ok: true, message: '已切换到游客账号' };
+    return url.toString();
   },
 
-  async logout() {
-    if (!this.enabled) return { ok: false, message: '未配置 Supabase' };
-    const { error } = await this.client.auth.signOut();
-    if (error) return { ok: false, message: error.message };
-    const { data, error: anonErr } = await this.client.auth.signInAnonymously();
-    if (anonErr) return { ok: false, message: anonErr.message };
-    this.user = data?.user || null;
-    return { ok: true, message: '已退出并切回游客账号' };
+  async _request(method, path, options = {}) {
+    const { query, body, allowFailure = false } = options;
+    const headers = {
+      Accept: 'application/json',
+    };
+
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
+    const requestOptions = {
+      method,
+      headers,
+    };
+
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      requestOptions.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(this._buildUrl(path, query), requestOptions);
+
+    if (allowFailure) return response.ok;
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `HTTP ${method} ${path} failed with ${response.status}${text ? `: ${text}` : ''}`
+      );
+    }
+
+    if (response.status === 204) return null;
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) return null;
+    return response.json();
   },
 
   _sanitizeAttraction(item) {
@@ -242,13 +285,12 @@ const AuthService = {
     if (!this.enabled || !this.user) return null;
     const dbSlot = this.setSelectedDatabaseSlot(slot);
     try {
-      const { data, error } = await this.client
-        .from(this.CLOUD_DB_TABLE)
-        .select('payload')
-        .eq('user_id', this.user.id)
-        .eq('db_slot', dbSlot)
-        .maybeSingle();
-      if (error) throw error;
+      const data = await this._request('GET', '/attraction-databases', {
+        query: {
+          user_id: this.user.id,
+          db_slot: dbSlot,
+        },
+      });
       const payload = data?.payload;
       return this._normalizeDatabasePayload(payload);
     } catch (err) {
@@ -262,15 +304,13 @@ const AuthService = {
     const dbSlot = this.setSelectedDatabaseSlot(slot);
     const payload = this._normalizeDatabasePayload(attractions);
     try {
-      const row = {
-        user_id: this.user.id,
-        db_slot: dbSlot,
-        payload,
-      };
-      const { error } = await this.client
-        .from(this.CLOUD_DB_TABLE)
-        .upsert(row, { onConflict: 'user_id,db_slot' });
-      if (error) throw error;
+      await this._request('PUT', '/attraction-databases', {
+        body: {
+          user_id: this.user.id,
+          db_slot: dbSlot,
+          payload,
+        },
+      });
       return true;
     } catch (err) {
       console.error('Failed to save cloud database:', err);
