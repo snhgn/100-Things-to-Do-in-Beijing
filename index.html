@@ -141,10 +141,13 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
   <script>
-    // Supabase anon key is public by design; keep RLS enabled to protect user data.
-    window.SUPABASE_CONFIG = window.SUPABASE_CONFIG || { url: '', anonKey: '' };
+    // 留空即本地模式；填写后通过你的后端 API 同步到 Azure PostgreSQL。
+    window.CLOUD_SYNC_CONFIG = window.CLOUD_SYNC_CONFIG || {
+      apiBaseUrl: '',
+      apiKey: '',
+      userId: '',
+    };
   </script>
   <script src="js/default-attractions.js"></script>
   <script src="js/auth.js"></script>

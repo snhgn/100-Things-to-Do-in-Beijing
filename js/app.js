@@ -541,7 +541,7 @@ const App = {
 
     if (!this.cloudSyncEnabled || !window.AuthService) {
       status.textContent = '本地模式';
-      hint.textContent = '未配置 Supabase，当前为本地存储模式。';
+      hint.textContent = '未配置云端同步服务，当前为本地存储模式。';
       switchInput.disabled = true;
       dbLabel.textContent = '数据库: 本地';
       return;
