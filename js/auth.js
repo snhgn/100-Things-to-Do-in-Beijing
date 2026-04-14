@@ -178,13 +178,14 @@ const AuthService = {
       return `device-${hex}`;
     }
 
-    const now = Date.now().toString(16);
-    return `device-${now}-fallback`;
+    throw new Error('当前浏览器不支持安全随机数，无法启用云端同步');
   },
 
   getUserLabel() {
     if (!this.user) return '未连接';
-    return this.user.id;
+    const id = String(this.user.id || '');
+    if (!id) return '设备账号';
+    return `设备账号(${id.slice(0, 8)})`;
   },
 
   _buildUrl(path, query) {

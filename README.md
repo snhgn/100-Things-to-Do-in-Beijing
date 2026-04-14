@@ -82,7 +82,7 @@ The frontend sends `Authorization: Bearer <apiKey>` when `apiKey` is configured.
 
 ```js
 window.CLOUD_SYNC_CONFIG = {
-  apiBaseUrl: 'https://YOUR_API_HOST', // your backend API base url
+  apiBaseUrl: 'https://YOUR_API_HOST', // your backend API base URL
   apiKey: 'YOUR_API_KEY',              // optional
   userId: '',                          // optional; empty = auto-generated device id
 };
