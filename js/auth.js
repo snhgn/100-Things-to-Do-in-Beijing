@@ -158,15 +158,28 @@ const AuthService = {
       const cached = String(localStorage.getItem(this.CLOUD_USER_ID_KEY) || '').trim();
       if (cached) return cached;
 
-      const generated =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const generated = this._generateFallbackUserId();
       localStorage.setItem(this.CLOUD_USER_ID_KEY, generated);
       return generated;
     } catch (_) {
-      return `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      return this._generateFallbackUserId();
     }
+  },
+
+  _generateFallbackUserId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      return `device-${hex}`;
+    }
+
+    const now = Date.now().toString(16);
+    return `device-${now}-fallback`;
   },
 
   getUserLabel() {
@@ -194,7 +207,6 @@ const AuthService = {
 
     if (this.apiKey) {
       headers.Authorization = `Bearer ${this.apiKey}`;
-      headers['x-api-key'] = this.apiKey;
     }
 
     const requestOptions = {
@@ -276,7 +288,7 @@ const AuthService = {
           db_slot: dbSlot,
         },
       });
-      const payload = Array.isArray(data) ? data : data?.payload;
+      const payload = data?.payload;
       return this._normalizeDatabasePayload(payload);
     } catch (err) {
       console.error('Failed to load cloud database:', err);
