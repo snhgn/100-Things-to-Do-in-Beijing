@@ -70,13 +70,13 @@ create index if not exists idx_attraction_databases_user_id
 The frontend now calls these endpoints:
 
 - `GET /attraction-databases?user_id=<string>&db_slot=<1..10>`
-  - Response: `{ "payload": [...] }` (or directly an array `[...]`)
+  - Response: `{ "payload": [...] }`
 - `PUT /attraction-databases`
   - Body: `{ "user_id": "...", "db_slot": 1, "payload": [...] }`
   - Response: `200/204`
 - Optional health check: `GET /health` (any 2xx is fine)
 
-The frontend sends `Authorization: Bearer <apiKey>` and `x-api-key: <apiKey>` when `apiKey` is configured.
+The frontend sends `Authorization: Bearer <apiKey>` when `apiKey` is configured.
 
 ### 3) Configure frontend in `index.html`
 
