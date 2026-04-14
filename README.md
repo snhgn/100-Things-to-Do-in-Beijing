@@ -44,46 +44,48 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 
 No build tools are required — the app is plain HTML, CSS, and JavaScript.
 
-## Supabase Configuration (Optional, for account + cloud sync)
+## Azure PostgreSQL Configuration (Optional, for cloud sync)
 
-If you want per-account sync across devices:
+This project is a pure frontend app, so it **cannot connect to PostgreSQL directly from browser** safely.
+You need a small backend API (Azure Functions / App Service / Container App) between browser and Azure Database for PostgreSQL.
 
-1. Create a Supabase project.
-2. Enable auth provider:
-   - **Anonymous**
-3. Create table `attraction_databases`:
+### 1) Create table in Azure Database for PostgreSQL
 
 ```sql
-create table if not exists public.attraction_databases (
-  user_id uuid not null references auth.users(id) on delete cascade,
+create table if not exists attraction_databases (
+  user_id text not null,
   db_slot smallint not null check (db_slot between 1 and 10),
   payload jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, db_slot)
 );
+
+create index if not exists idx_attraction_databases_user_id
+  on attraction_databases (user_id);
 ```
 
-4. Enable RLS and add policy (users only access their own rows):
+### 2) Implement backend API contract
 
-```sql
-alter table public.attraction_databases enable row level security;
+The frontend now calls these endpoints:
 
-create policy "users_manage_own_databases"
-on public.attraction_databases
-for all
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-```
+- `GET /attraction-databases?user_id=<string>&db_slot=<1..10>`
+  - Response: `{ "payload": [...] }` (or directly an array `[...]`)
+- `PUT /attraction-databases`
+  - Body: `{ "user_id": "...", "db_slot": 1, "payload": [...] }`
+  - Response: `200/204`
+- Optional health check: `GET /health` (any 2xx is fine)
 
-5. In `index.html`, set:
+The frontend sends `Authorization: Bearer <apiKey>` and `x-api-key: <apiKey>` when `apiKey` is configured.
+
+### 3) Configure frontend in `index.html`
 
 ```js
-window.SUPABASE_CONFIG = {
-  url: 'https://YOUR_PROJECT.supabase.co',
-  anonKey: 'YOUR_SUPABASE_ANON_KEY',
+window.CLOUD_SYNC_CONFIG = {
+  apiBaseUrl: 'https://YOUR_API_HOST', // your backend API base url
+  apiKey: 'YOUR_API_KEY',              // optional
+  userId: '',                          // optional; empty = auto-generated device id
 };
 ```
 
-If config is left empty, the app automatically runs in local-only mode.
+If `apiBaseUrl` is empty, the app automatically runs in local-only mode.
