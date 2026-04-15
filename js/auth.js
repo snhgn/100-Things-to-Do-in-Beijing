@@ -2,10 +2,43 @@
    Cloud Sync Service (Custom REST API)
    ============================================================ */
 
-const VALID_PHOTO_DATA_URL_REGEX = /^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
+const VALID_MEDIA_DATA_URL_REGEX =
+  /^data:(image|video)\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
+
+function inferMediaKindFromDataUrl(src) {
+  return String(src || '').trim().toLowerCase().startsWith('data:video/')
+    ? 'video'
+    : 'image';
+}
+
+function normalizeMediaEntry(entry) {
+  if (typeof entry === 'string') {
+    const src = entry.trim();
+    if (!src || !VALID_MEDIA_DATA_URL_REGEX.test(src)) return null;
+    return {
+      kind: inferMediaKindFromDataUrl(src),
+      src,
+    };
+  }
+
+  if (!entry || typeof entry !== 'object') return null;
+
+  const src = String(entry.src || entry.url || '').trim();
+  if (!src || !VALID_MEDIA_DATA_URL_REGEX.test(src)) return null;
+
+  const rawKind = String(entry.kind || entry.type || '').toLowerCase();
+  const kind = rawKind.includes('video')
+    ? 'video'
+    : rawKind.includes('image')
+    ? 'image'
+    : inferMediaKindFromDataUrl(src);
+
+  return { kind, src };
+}
 
 const AuthService = {
-  CLOUD_DB_COUNT: 10,
+  CLOUD_DB_COUNT: 1,
+  DEFAULT_SHARED_USER_ID: 'beijing-shared-user',
   CLOUD_DB_SLOT_KEY: 'beijing_cloud_db_slot_v1',
   CLOUD_DB_NAMES_KEY: 'beijing_cloud_db_names_v1',
   CLOUD_USER_ID_KEY: 'beijing_cloud_user_id_v1',
@@ -63,29 +96,31 @@ const AuthService = {
 
   getSelectedDatabaseSlot() {
     try {
-      const raw = Number(localStorage.getItem(this.CLOUD_DB_SLOT_KEY));
-      if (Number.isInteger(raw) && raw >= 1 && raw <= this.CLOUD_DB_COUNT) return raw;
-      return 1;
+      localStorage.setItem(this.CLOUD_DB_SLOT_KEY, '1');
     } catch (_) {
-      return 1;
+      // Ignore persistence failures and fallback to slot 1 in memory.
     }
+    return 1;
   },
 
   setSelectedDatabaseSlot(slot) {
-    const normalized = Number(slot);
-    if (!Number.isInteger(normalized) || normalized < 1 || normalized > this.CLOUD_DB_COUNT) {
-      return this.getSelectedDatabaseSlot();
-    }
     try {
-      localStorage.setItem(this.CLOUD_DB_SLOT_KEY, String(normalized));
+      localStorage.setItem(this.CLOUD_DB_SLOT_KEY, '1');
     } catch (_) {
-      // Ignore persistence failures and keep current slot in memory fallback.
+      // Ignore persistence failures and fallback to slot 1 in memory.
     }
-    return normalized;
+    return 1;
   },
 
   _defaultDatabaseNames() {
     return Array.from({ length: this.CLOUD_DB_COUNT }, (_, i) => `库 ${i + 1}`);
+  },
+
+  _normalizeDatabaseName(name) {
+    return String(name || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '');
   },
 
   getDatabaseNames() {
@@ -126,9 +161,10 @@ const AuthService = {
     if (nextName.length > 30) return { ok: false, message: '数据库名字不能超过 30 个字符' };
 
     const names = this.getDatabaseNames();
-    const normalizedName = nextName.toLowerCase();
+    const normalizedName = this._normalizeDatabaseName(nextName);
     const duplicate = names.findIndex(
-      (item, idx) => idx !== normalizedSlot - 1 && item.toLowerCase() === normalizedName
+      (item, idx) =>
+        idx !== normalizedSlot - 1 && this._normalizeDatabaseName(item) === normalizedName
     );
     if (duplicate !== -1) return { ok: false, message: '数据库名字已存在，请使用其他名字' };
 
@@ -143,10 +179,10 @@ const AuthService = {
   },
 
   findDatabaseSlotByName(name) {
-    const normalized = String(name || '').trim().toLowerCase();
+    const normalized = this._normalizeDatabaseName(name);
     if (!normalized) return null;
     const names = this.getDatabaseNames();
-    const idx = names.findIndex((item) => item.toLowerCase() === normalized);
+    const idx = names.findIndex((item) => this._normalizeDatabaseName(item) === normalized);
     return idx === -1 ? null : idx + 1;
   },
 
@@ -154,31 +190,13 @@ const AuthService = {
     const input = String(configUserId || '').trim();
     if (input) return input;
 
+    // Use a deterministic shared ID by default so different devices can see the same data.
     try {
-      const cached = String(localStorage.getItem(this.CLOUD_USER_ID_KEY) || '').trim();
-      if (cached) return cached;
-
-      const generated = this._generateFallbackUserId();
-      localStorage.setItem(this.CLOUD_USER_ID_KEY, generated);
-      return generated;
+      localStorage.setItem(this.CLOUD_USER_ID_KEY, this.DEFAULT_SHARED_USER_ID);
     } catch (_) {
-      return this._generateFallbackUserId();
+      // Ignore persistence failures and keep using the in-memory fallback.
     }
-  },
-
-  _generateFallbackUserId() {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-
-    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
-      const bytes = new Uint8Array(16);
-      crypto.getRandomValues(bytes);
-      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-      return `device-${hex}`;
-    }
-
-    throw new Error('Secure random generation is unavailable; cloud sync cannot be enabled.');
+    return this.DEFAULT_SHARED_USER_ID;
   },
 
   getUserLabel() {
@@ -250,9 +268,7 @@ const AuthService = {
       visitDate: item.visitDate || null,
       notes: String(item.notes || ''),
       photos: Array.isArray(item.photos)
-        ? item.photos.filter(
-          (src) => typeof src === 'string' && VALID_PHOTO_DATA_URL_REGEX.test(src)
-        )
+        ? item.photos.map((entry) => normalizeMediaEntry(entry)).filter(Boolean)
         : [],
     };
   },

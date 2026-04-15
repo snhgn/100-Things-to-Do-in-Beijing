@@ -34,6 +34,12 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 
 > **Requires an internet connection** for the first load to fetch the parsing libraries (SheetJS, mammoth.js, pdf.js) from CDN.
 
+## Security Notes
+
+- Do not commit real server addresses, API keys, database passwords, or SSH profiles to public repositories.
+- Keep actual backend credentials only in local `backend/.env`.
+- The committed `.vscode/sftp.json` is a template and should be replaced with your own private values locally.
+
 ## Technology
 
 | Library | Purpose | CDN Version |
@@ -67,7 +73,7 @@ Quick start:
 ```sql
 create table if not exists attraction_databases (
   user_id text not null,
-  db_slot smallint not null check (db_slot between 1 and 10),
+  db_slot smallint not null check (db_slot = 1),
   payload jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -82,7 +88,7 @@ create index if not exists idx_attraction_databases_user_id
 
 The frontend now calls these endpoints:
 
-- `GET /attraction-databases?user_id=<string>&db_slot=<1..10>`
+- `GET /attraction-databases?user_id=<string>&db_slot=1`
   - Response: `{ "payload": [...] }`
 - `PUT /attraction-databases`
   - Body: `{ "user_id": "...", "db_slot": 1, "payload": [...] }`
@@ -97,7 +103,7 @@ The frontend sends `Authorization: Bearer <apiKey>` when `apiKey` is configured.
 window.CLOUD_SYNC_CONFIG = {
   apiBaseUrl: 'https://YOUR_API_HOST', // your backend API base URL
   apiKey: 'YOUR_API_KEY',              // optional
-  userId: '',                          // optional; empty = auto-generated device id
+  userId: '',                          // optional; empty = shared default user id
 };
 ```
 

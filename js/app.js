@@ -10,6 +10,11 @@ const PDFJS_WORKER_URL =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
 const TAG_KEY_SEPARATOR = '::';
 const CLOUD_SAVE_DEBOUNCE_MS = 400;
+const DEFAULT_STARTUP_DATABASE_SLOT = 1;
+const MEDIA_UPLOAD_ACCEPT = 'image/*,video/*,.heic,.heif,.mov,.mp4,.webm,.m4v';
+const MAX_MEDIA_ITEMS_PER_ATTRACTION = 20;
+const MAX_MEDIA_FILE_SIZE_MB = 12;
+const MAX_MEDIA_FILE_SIZE_BYTES = MAX_MEDIA_FILE_SIZE_MB * 1024 * 1024;
 
 function normalizeTagList(tags) {
   if (!Array.isArray(tags)) return [];
@@ -23,29 +28,119 @@ function normalizeTagList(tags) {
     .filter(Boolean);
 }
 
+function inferMediaKindFromDataUrl(src) {
+  const value = String(src || '').trim().toLowerCase();
+  return value.startsWith('data:video/') ? 'video' : 'image';
+}
+
+function normalizeMediaEntry(entry) {
+  if (typeof entry === 'string') {
+    const src = entry.trim();
+    if (!src) return null;
+    return {
+      kind: inferMediaKindFromDataUrl(src),
+      src,
+    };
+  }
+
+  if (!entry || typeof entry !== 'object') return null;
+
+  const src = String(entry.src || entry.url || '').trim();
+  if (!src) return null;
+
+  const rawKind = String(entry.kind || entry.type || '').toLowerCase();
+  const kind = rawKind.includes('video')
+    ? 'video'
+    : rawKind.includes('image')
+    ? 'image'
+    : inferMediaKindFromDataUrl(src);
+
+  return { kind, src };
+}
+
+function normalizeMediaList(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((entry) => normalizeMediaEntry(entry)).filter(Boolean);
+}
+
+function isSupportedMediaFile(file) {
+  const mime = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  if (mime.startsWith('image/') || mime.startsWith('video/')) return true;
+  return /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|mov|mp4|webm|m4v|avi)$/.test(name);
+}
+
+function inferMediaKindFromFile(file, dataUrl = '') {
+  const mime = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('image/')) return 'image';
+  if (/\.(mov|mp4|webm|m4v|avi)$/.test(name)) return 'video';
+  if (/\.(jpe?g|png|gif|webp|bmp|avif|heic|heif)$/.test(name)) return 'image';
+  return inferMediaKindFromDataUrl(dataUrl);
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(String(e.target?.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 /* ------------------------------------------------------------------
    1. LocalStorage Store
 ------------------------------------------------------------------ */
 const Store = {
   KEY: 'beijing_attractions_v1',
+  cache: null,
+  cloudMode: false,
+  quotaWarned: false,
 
-  getAll() {
+  setCloudMode(enabled) {
+    this.cloudMode = Boolean(enabled);
+  },
+
+  _readFromLocal() {
     try {
       const raw = localStorage.getItem(this.KEY);
-      return raw ? JSON.parse(raw) : [];
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (_) {
       return [];
     }
   },
 
+  _ensureCache() {
+    if (Array.isArray(this.cache)) return;
+    this.cache = this._readFromLocal();
+  },
+
+  getAll() {
+    this._ensureCache();
+    return this.cache;
+  },
+
   _persist(list) {
+    const nextList = Array.isArray(list) ? list : [];
+    this.cache = nextList;
     try {
-      localStorage.setItem(this.KEY, JSON.stringify(list));
+      localStorage.setItem(this.KEY, JSON.stringify(nextList));
+      this.quotaWarned = false;
     } catch (e) {
-      // Storage quota may be exceeded when photos are large
-      alert('存储空间不足，部分数据（尤其是照片）可能无法保存。请删除一些照片后重试。');
+      // Browser localStorage quota is usually around a few MB, much smaller than DB server storage.
+      if (this.cloudMode) {
+        if (!this.quotaWarned) {
+          console.warn('Local storage quota exceeded; fallback to cloud-only persistence for large media.');
+          this.quotaWarned = true;
+        }
+      } else if (!this.quotaWarned) {
+        alert('浏览器本地存储空间不足，部分媒体可能无法离线保存。请减少照片数量或连接云端同步。');
+        this.quotaWarned = true;
+      }
     }
-    return list;
+    return nextList;
   },
 
   replaceAll(list) {
@@ -78,6 +173,7 @@ const Store = {
   },
 
   clear() {
+    this.cache = [];
     localStorage.removeItem(this.KEY);
     return [];
   },
@@ -405,12 +501,20 @@ const App = {
 
     document.getElementById('databaseSwitchForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!window.AuthService || window.AuthService.getDatabaseCount() <= 1) {
+        await this._switchCloudDatabase(DEFAULT_STARTUP_DATABASE_SLOT);
+        return;
+      }
       const nameInput = document.getElementById('databaseNameInput');
       await this._switchCloudDatabaseByName(nameInput.value);
     });
 
     document.getElementById('databaseRenameForm').addEventListener('submit', (e) => {
       e.preventDefault();
+      if (!window.AuthService || window.AuthService.getDatabaseCount() <= 1) {
+        alert('当前仅保留数据库1，无需管理多数据库名称。');
+        return;
+      }
       const slot = Number(document.getElementById('databaseRenameSlot').value);
       const name = document.getElementById('databaseRenameInput').value;
       const result = window.AuthService.setDatabaseName(slot, name);
@@ -423,10 +527,10 @@ const App = {
 
     /* Photo lightbox close */
     document.getElementById('modalBackdrop').addEventListener('click', () => {
-      document.getElementById('photoModal').hidden = true;
+      this._closeLightbox();
     });
     document.getElementById('modalClose').addEventListener('click', () => {
-      document.getElementById('photoModal').hidden = true;
+      this._closeLightbox();
     });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
@@ -438,19 +542,25 @@ const App = {
         this._closeManagerDrawer();
         return;
       }
-      document.getElementById('photoModal').hidden = true;
+      this._closeLightbox();
     });
   },
 
   async _initAuth() {
     if (!window.AuthService) {
       this.cloudSyncEnabled = false;
+      Store.setCloudMode(false);
       this._refreshAuthUI();
       return;
     }
     const enabled = await window.AuthService.init();
     this.cloudSyncEnabled = enabled;
-    this.selectedDatabaseSlot = window.AuthService.getSelectedDatabaseSlot();
+    Store.setCloudMode(enabled);
+
+    // Always open with database slot 1 as the default entry point.
+    this.selectedDatabaseSlot = window.AuthService.setSelectedDatabaseSlot(
+      DEFAULT_STARTUP_DATABASE_SLOT
+    );
     this._refreshDatabaseEditor();
     this._refreshAuthUI();
 
@@ -458,12 +568,12 @@ const App = {
 
     window.AuthService.onAuthStateChange(async () => {
       this._refreshAuthUI();
-      await this._syncDatabaseFromCloud();
+      await this._syncDatabaseFromCloud({ seedDefaultWhenEmpty: true });
       this._renderStats();
       this._renderList();
     });
 
-    await this._syncDatabaseFromCloud();
+    await this._syncDatabaseFromCloud({ seedDefaultWhenEmpty: true });
   },
 
   _renderDatabaseOptions() {
@@ -498,11 +608,55 @@ const App = {
     renameInput.value = window.AuthService.getDatabaseName(selected);
   },
 
+  _resolveDatabaseSlotInput(name) {
+    if (!window.AuthService) return null;
+    const count = window.AuthService.getDatabaseCount();
+    if (count <= 1) return DEFAULT_STARTUP_DATABASE_SLOT;
+
+    const input = String(name || '').trim();
+    if (!input) return null;
+
+    const compact = input.replace(/\s+/g, '');
+    const numericMatch =
+      compact.match(/^(\d{1,2})$/) ||
+      compact.match(/^库(\d{1,2})$/) ||
+      compact.match(/^数据库(\d{1,2})$/);
+    if (numericMatch) {
+      const slot = Number(numericMatch[1]);
+      if (Number.isInteger(slot) && slot >= 1 && slot <= window.AuthService.getDatabaseCount()) {
+        return slot;
+      }
+    }
+
+    const cnDigitMap = {
+      一: 1,
+      二: 2,
+      三: 3,
+      四: 4,
+      五: 5,
+      六: 6,
+      七: 7,
+      八: 8,
+      九: 9,
+      十: 10,
+    };
+    const cnMatch = compact.match(/^库([一二三四五六七八九十])$/) || compact.match(/^数据库([一二三四五六七八九十])$/);
+    if (cnMatch) {
+      return cnDigitMap[cnMatch[1]] || null;
+    }
+
+    return window.AuthService.findDatabaseSlotByName(input);
+  },
+
   async _switchCloudDatabaseByName(name) {
     if (!this.cloudSyncEnabled || !window.AuthService) return;
-    const slot = window.AuthService.findDatabaseSlotByName(name);
+    if (window.AuthService.getDatabaseCount() <= 1) {
+      await this._switchCloudDatabase(DEFAULT_STARTUP_DATABASE_SLOT);
+      return;
+    }
+    const slot = this._resolveDatabaseSlotInput(name);
     if (!slot) {
-      alert('未找到该数据库名字，请先在“数据库名称管理”中将某个数据库重命名为该名字。');
+      alert('未找到该数据库，请输入正确的数据库名字或编号。');
       return;
     }
     await this._switchCloudDatabase(slot);
@@ -526,8 +680,26 @@ const App = {
   },
 
   _refreshDatabaseEditor() {
+    const switchForm = document.getElementById('databaseSwitchForm');
+    const nameEntryBtn = document.getElementById('databaseNameEntryBtn');
+    const switchInput = document.getElementById('databaseNameInput');
     const count = window.AuthService.getDatabaseCount();
     if (!count) return;
+
+    const singleDatabaseMode = count <= 1;
+    if (switchForm) switchForm.hidden = singleDatabaseMode;
+    if (nameEntryBtn) nameEntryBtn.hidden = singleDatabaseMode;
+    if (switchInput) {
+      switchInput.disabled = singleDatabaseMode;
+      switchInput.placeholder = singleDatabaseMode
+        ? '仅保留数据库1'
+        : '输入数据库名字或编号(1-10)';
+      switchInput.setAttribute(
+        'aria-label',
+        singleDatabaseMode ? '仅保留数据库1' : '输入数据库名字或编号(1-10)'
+      );
+    }
+
     this._renderDatabaseOptions();
     this._setCurrentDatabaseNameInput();
     this._fillRenameInputFromSelectedSlot();
@@ -537,6 +709,8 @@ const App = {
     const status = document.getElementById('authStatus');
     const hint = document.getElementById('authHint');
     const switchInput = document.getElementById('databaseNameInput');
+    const switchForm = document.getElementById('databaseSwitchForm');
+    const nameEntryBtn = document.getElementById('databaseNameEntryBtn');
     const dbLabel = document.getElementById('databaseLabel');
 
     if (!this.cloudSyncEnabled || !window.AuthService) {
@@ -548,20 +722,52 @@ const App = {
     }
 
     const user = window.AuthService.getUser();
+    const singleDatabaseMode = window.AuthService.getDatabaseCount() <= 1;
     this.selectedDatabaseSlot = window.AuthService.getSelectedDatabaseSlot();
     const dbName = window.AuthService.getDatabaseName(this.selectedDatabaseSlot);
-    switchInput.disabled = !user;
+    switchInput.disabled = !user || singleDatabaseMode;
+    if (switchForm) switchForm.hidden = singleDatabaseMode;
+    if (nameEntryBtn) nameEntryBtn.hidden = singleDatabaseMode;
     dbLabel.textContent = `数据库: ${dbName}`;
     status.textContent = user ? '云端已连接' : '未连接';
-    hint.textContent = '可编辑数据库名字；在页头输入数据库名字即可切换。';
+    hint.textContent = singleDatabaseMode
+      ? '当前仅保留数据库1。'
+      : '可编辑数据库名字；在页头输入数据库名字或编号（1-10）即可切换。';
     this._refreshDatabaseEditor();
   },
 
-  async _syncDatabaseFromCloud() {
+  async _syncDatabaseFromCloud(options = {}) {
+    const { seedDefaultWhenEmpty = false } = options;
     if (!this.cloudSyncEnabled || !window.AuthService) return;
     const slot = window.AuthService.getSelectedDatabaseSlot();
     const cloudAttractions = await window.AuthService.loadDatabase(slot);
     if (!Array.isArray(cloudAttractions)) return;
+
+    if (
+      seedDefaultWhenEmpty &&
+      slot === DEFAULT_STARTUP_DATABASE_SLOT &&
+      cloudAttractions.length === 0 &&
+      Array.isArray(window.DEFAULT_ATTRACTIONS) &&
+      window.DEFAULT_ATTRACTIONS.length
+    ) {
+      // If this device already has local data, push it first to avoid overriding user edits.
+      if (Array.isArray(this.attractions) && this.attractions.length) {
+        const pushed = await window.AuthService.saveDatabase(slot, this.attractions);
+        if (pushed) return;
+        console.warn('Failed to bootstrap empty cloud db-1 from local data.');
+      }
+
+      // Seed db-1 once so first open always lands on the built-in 100-item checklist.
+      Store.replaceAll([]);
+      this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
+      this.expandedIds.clear();
+      const seeded = await window.AuthService.saveDatabase(slot, this.attractions);
+      if (!seeded) {
+        console.warn('Failed to seed default db-1 payload to cloud; local fallback is active.');
+      }
+      return;
+    }
+
     this.selectedDatabaseSlot = slot;
     this.attractions = Store.replaceAll(cloudAttractions);
     this.expandedIds.clear();
@@ -703,7 +909,7 @@ const App = {
   /* ---- card HTML template ---- */
   _cardHTML(a) {
     const expanded = this.expandedIds.has(a.id);
-    const photos = a.photos || [];
+    const mediaItems = normalizeMediaList(a.photos);
     const tags = normalizeTagList(a.tags);
     const tagsHTML = tags.length
       ? `<div class="tag-list">
@@ -734,29 +940,34 @@ const App = {
            >${esc(a.notes)}</textarea>
 
            <div class="photo-section">
-             <h4>📷 打卡照片</h4>
+             <h4>📷 打卡照片 / 实况</h4>
              <div class="photo-grid" id="photos-${a.id}">
-               ${photos
-                 .map(
-                   (src, idx) => `
+               ${mediaItems
+                 .map((media, idx) => {
+                   const src = esc(media.src);
+                   const mediaThumb =
+                     media.kind === 'video'
+                       ? `<video src="${src}" class="media-thumb video-thumb" data-src="${src}" data-kind="video" muted playsinline preload="metadata" aria-label="实况视频 ${idx + 1}"></video>
+                          <span class="photo-live-badge">LIVE</span>`
+                       : `<img src="${src}" alt="打卡照片 ${idx + 1}" data-src="${src}" data-kind="image" class="media-thumb photo-thumb">`;
+                   return `
                  <div class="photo-item">
-                   <img src="${esc(src)}" alt="打卡照片 ${idx + 1}"
-                        data-src="${esc(src)}" class="photo-thumb">
+                   ${mediaThumb}
                    <button class="photo-delete" data-id="${a.id}" data-idx="${idx}"
                            aria-label="删除照片">✕</button>
-                 </div>`
-                 )
+                 </div>`;
+                 })
                  .join('')}
-               <label class="photo-add" title="添加照片" aria-label="添加照片">
-                 <input type="file" accept="image/*" multiple hidden
+               <label class="photo-add" title="添加照片或实况" aria-label="添加照片或实况">
+                 <input type="file" accept="${MEDIA_UPLOAD_ACCEPT}" multiple hidden
                         class="photo-upload-input" data-id="${a.id}">
                  <span class="photo-add-icon">＋</span>
-                 <span class="photo-add-text">添加照片</span>
+                 <span class="photo-add-text">上传实况</span>
                </label>
              </div>
            </div>
          </div>`
-      : `<div class="unvisited-hint">勾选左侧方框后，可在此记录游览感受和照片</div>`;
+      : `<div class="unvisited-hint">勾选左侧方框后，可在此记录游览感受和照片/实况</div>`;
 
     return `
       <div class="attraction-card ${a.visited ? 'visited' : ''}" id="card-${a.id}">
@@ -827,9 +1038,14 @@ const App = {
       });
     }
 
-    /* Photo thumbnails — open lightbox */
-    card.querySelectorAll('.photo-thumb').forEach((img) => {
-      img.addEventListener('click', () => this._openLightbox(img.dataset.src));
+    /* Media thumbnails — open lightbox */
+    card.querySelectorAll('.media-thumb').forEach((thumb) => {
+      thumb.addEventListener('click', () => {
+        this._openLightbox({
+          src: thumb.dataset.src,
+          kind: thumb.dataset.kind,
+        });
+      });
     });
 
     /* Photo delete buttons */
@@ -900,27 +1116,63 @@ const App = {
   async _uploadPhotos(id, files) {
     const attraction = this.attractions.find((a) => a.id === id);
     if (!attraction) return;
-    const photos = [...(attraction.photos || [])];
+    const existingMedia = normalizeMediaList(attraction.photos);
+    const nextMedia = [...existingMedia];
+    const rejected = [];
 
-    const readers = Array.from(files).map(
-      (f) =>
-        new Promise((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = (e) => resolve(e.target.result);
-          r.onerror = reject;
-          r.readAsDataURL(f);
-        })
-    );
+    for (const file of Array.from(files || [])) {
+      if (nextMedia.length >= MAX_MEDIA_ITEMS_PER_ATTRACTION) {
+        rejected.push(`${file.name}（超过每个景点最多 ${MAX_MEDIA_ITEMS_PER_ATTRACTION} 个媒体的限制）`);
+        continue;
+      }
+
+      if (!isSupportedMediaFile(file)) {
+        rejected.push(`${file.name}（仅支持图片或视频文件）`);
+        continue;
+      }
+
+      if (Number(file.size || 0) > MAX_MEDIA_FILE_SIZE_BYTES) {
+        rejected.push(`${file.name}（文件超过 ${MAX_MEDIA_FILE_SIZE_MB}MB）`);
+        continue;
+      }
+
+      try {
+        const dataUrl = await readFileAsDataURL(file);
+        if (!dataUrl) {
+          rejected.push(`${file.name}（读取失败）`);
+          continue;
+        }
+        nextMedia.push({
+          kind: inferMediaKindFromFile(file, dataUrl),
+          src: dataUrl,
+        });
+      } catch (e) {
+        console.error(e);
+        rejected.push(`${file.name}（读取失败）`);
+      }
+    }
+
+    if (nextMedia.length === existingMedia.length) {
+      if (rejected.length) {
+        alert(`没有可上传的媒体文件：\n${rejected.slice(0, 5).join('\n')}`);
+      }
+      return;
+    }
 
     try {
-      const results = await Promise.all(readers);
-      results.forEach((dataUrl) => photos.push(dataUrl));
-      this.attractions = Store.update(id, { photos });
+      this.attractions = Store.update(id, { photos: nextMedia });
       this._scheduleCloudSave();
       this._renderList();
+
+      if (rejected.length) {
+        const brief = rejected.slice(0, 5).join('\n');
+        const suffix =
+          rejected.length > 5 ? `\n...另外还有 ${rejected.length - 5} 个文件未上传。` : '';
+        alert(`部分文件未上传：\n${brief}${suffix}`);
+      }
     } catch (e) {
       console.error(e);
-      alert('照片上传失败，请重试。');
+      alert('媒体上传失败，请重试。');
     }
   },
 
@@ -928,7 +1180,8 @@ const App = {
   _deletePhoto(id, idx) {
     const attraction = this.attractions.find((a) => a.id === id);
     if (!attraction) return;
-    const photos = [...(attraction.photos || [])];
+    const photos = normalizeMediaList(attraction.photos);
+    if (idx < 0 || idx >= photos.length) return;
     photos.splice(idx, 1);
     this.attractions = Store.update(id, { photos });
     this._scheduleCloudSave();
@@ -1041,9 +1294,48 @@ const App = {
   },
 
   /* ---- lightbox ---- */
-  _openLightbox(src) {
-    document.getElementById('modalImage').src = src;
-    document.getElementById('photoModal').hidden = false;
+  _closeLightbox() {
+    const modal = document.getElementById('photoModal');
+    const image = document.getElementById('modalImage');
+    const video = document.getElementById('modalVideo');
+    modal.hidden = true;
+    image.hidden = true;
+    image.src = '';
+    if (video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.hidden = true;
+      video.load();
+    }
+  },
+
+  _openLightbox(media) {
+    const normalized = normalizeMediaEntry(media) || normalizeMediaEntry(String(media || ''));
+    if (!normalized) return;
+
+    const modal = document.getElementById('photoModal');
+    const image = document.getElementById('modalImage');
+    const video = document.getElementById('modalVideo');
+
+    if (normalized.kind === 'video' && video) {
+      image.hidden = true;
+      image.src = '';
+      video.hidden = false;
+      video.src = normalized.src;
+      video.currentTime = 0;
+      video.play().catch(() => {});
+    } else {
+      if (video) {
+        video.pause();
+        video.removeAttribute('src');
+        video.hidden = true;
+        video.load();
+      }
+      image.hidden = false;
+      image.src = normalized.src;
+    }
+
+    modal.hidden = false;
   },
 };
 

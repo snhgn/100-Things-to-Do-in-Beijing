@@ -2,7 +2,7 @@
 
 This backend matches the frontend contract in this repository:
 - GET /health
-- GET /attraction-databases?user_id=<string>&db_slot=<1..10>
+- GET /attraction-databases?user_id=<string>&db_slot=1
 - PUT /attraction-databases
 
 ## 1) Install
@@ -18,6 +18,7 @@ npm install
 2. Fill PostgreSQL connection info from Azure PostgreSQL Flexible Server.
 3. Set API_KEY to a random string (recommended).
 4. Set CORS_ALLOWED_ORIGIN to your frontend domain.
+5. Do not commit .env to GitHub.
 
 ## 3) Start locally
 
@@ -64,3 +65,8 @@ In index.html, set:
 - userId: optional (empty is fine)
 
 Then refresh frontend page and check the top-right cloud status.
+
+## 7) Payload Size
+
+- Default JSON_BODY_LIMIT is 80mb for media-heavy payloads.
+- If uploads still fail with 413, increase JSON_BODY_LIMIT in .env and restart the service.

@@ -26,7 +26,7 @@
         <div class="account-entry">
           <span id="databaseLabel">数据库: 本地</span>
           <form id="databaseSwitchForm" class="database-switch-form">
-            <input type="text" id="databaseNameInput" list="databaseNameList" placeholder="输入数据库名字" autocomplete="off" aria-label="输入数据库名字">
+            <input type="text" id="databaseNameInput" list="databaseNameList" placeholder="仅保留数据库1" autocomplete="off" aria-label="仅保留数据库1">
             <datalist id="databaseNameList"></datalist>
             <button class="btn-link" id="databaseSwitchBtn" type="submit">切换</button>
           </form>
@@ -92,6 +92,7 @@
     <div class="modal-content">
       <button class="modal-close" id="modalClose" aria-label="关闭">✕</button>
       <img id="modalImage" src="" alt="放大图片">
+      <video id="modalVideo" controls playsinline hidden></video>
     </div>
   </div>
 
@@ -129,7 +130,7 @@
     <div class="auth-modal-content">
       <button class="modal-close" id="authModalClose" aria-label="关闭">✕</button>
       <h2>数据库名称管理</h2>
-      <p class="auth-hint" id="authHint">可编辑 10 个数据库名字；首页输入数据库名字即可切换。</p>
+      <p class="auth-hint" id="authHint">当前仅保留数据库1。</p>
       <form id="databaseRenameForm">
         <select id="databaseRenameSlot" aria-label="选择要重命名的数据库"></select>
         <input type="text" id="databaseRenameInput" placeholder="输入新的数据库名字" maxlength="30" aria-label="输入新的数据库名字" required>
@@ -142,12 +143,62 @@
   </div>
 
   <script>
-    // 留空即本地模式；填写后通过你的后端 API 同步到 Azure PostgreSQL。
-    window.CLOUD_SYNC_CONFIG = window.CLOUD_SYNC_CONFIG || {
-      apiBaseUrl: '',
-      apiKey: '',
-      userId: '',
-    };
+    // 默认不内置服务器地址与密钥，避免将私有配置提交到仓库。
+    // 可通过 URL 参数覆盖配置（会写入本地缓存）：
+    // ?apiBaseUrl=https://your-api-host.example.com&apiKey=your-api-key&userId=your-user-id
+    (function initCloudSyncConfig() {
+      const STORAGE_KEY = 'beijing_cloud_sync_runtime_config_v1';
+      const params = new URLSearchParams(window.location.search);
+
+      let cached = {};
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        cached = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        cached = {};
+      }
+
+      const cachedApiBaseUrl = String(cached.apiBaseUrl || '').trim();
+      const cachedIsLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
+        cachedApiBaseUrl
+      );
+
+      const queryConfig = {
+        apiBaseUrl: String(params.get('apiBaseUrl') || '').trim(),
+        apiKey: String(params.get('apiKey') || '').trim(),
+        userId: String(params.get('userId') || '').trim(),
+      };
+
+      const defaultConfig = {
+        apiBaseUrl: '',
+        apiKey: '',
+        userId: '',
+      };
+
+      const runtimeConfig = {
+        apiBaseUrl: queryConfig.apiBaseUrl || (cachedIsLocalhost ? '' : cachedApiBaseUrl),
+        apiKey: queryConfig.apiKey || String(cached.apiKey || '').trim(),
+        userId: queryConfig.userId || String(cached.userId || '').trim(),
+      };
+
+      const mergedConfig = {
+        apiBaseUrl: runtimeConfig.apiBaseUrl || defaultConfig.apiBaseUrl,
+        apiKey: runtimeConfig.apiKey || defaultConfig.apiKey,
+        userId: runtimeConfig.userId || defaultConfig.userId,
+      };
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedConfig));
+      } catch (_) {
+        // Ignore storage write failures and continue with in-memory config.
+      }
+
+      window.CLOUD_SYNC_CONFIG = Object.assign(
+        {},
+        mergedConfig,
+        window.CLOUD_SYNC_CONFIG || {}
+      );
+    })();
   </script>
   <script src="js/default-attractions.js"></script>
   <script src="js/auth.js"></script>

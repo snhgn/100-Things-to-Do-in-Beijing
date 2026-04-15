@@ -1,6 +1,6 @@
 create table if not exists attraction_databases (
   user_id text not null,
-  db_slot smallint not null check (db_slot between 1 and 10),
+  db_slot smallint not null check (db_slot = 1),
   payload jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

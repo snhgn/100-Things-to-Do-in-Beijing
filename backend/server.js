@@ -7,8 +7,8 @@ const cors = require('cors');
 const { Pool } = require('pg');
 
 const DB_SLOT_MIN = 1;
-const DB_SLOT_MAX = 10;
-const DEFAULT_BODY_LIMIT = '20mb';
+const DB_SLOT_MAX = 1;
+const DEFAULT_BODY_LIMIT = '80mb';
 const REQUIRED_ENV = ['PGHOST', 'PGUSER', 'PGPASSWORD', 'PGDATABASE'];
 
 const missingEnv = REQUIRED_ENV.filter((name) => !String(process.env[name] || '').trim());
@@ -99,7 +99,7 @@ const pool = new Pool({
 const INIT_SQL = `
 create table if not exists attraction_databases (
   user_id text not null,
-  db_slot smallint not null check (db_slot between 1 and 10),
+  db_slot smallint not null check (db_slot = 1),
   payload jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -110,10 +110,50 @@ create index if not exists idx_attraction_databases_user_id
   on attraction_databases (user_id);
 `;
 
+const SINGLE_DB_MODE_SQL = `
+delete from attraction_databases
+where db_slot <> 1;
+
+do $$
+declare
+  constraint_row record;
+begin
+  for constraint_row in
+    select n.nspname, c.relname as table_name, con.conname
+    from pg_constraint con
+    join pg_class c on c.oid = con.conrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    where con.contype = 'c'
+      and c.relname = 'attraction_databases'
+      and pg_get_constraintdef(con.oid) ilike '%db_slot%'
+  loop
+    execute format(
+      'alter table %I.%I drop constraint %I',
+      constraint_row.nspname,
+      constraint_row.table_name,
+      constraint_row.conname
+    );
+  end loop;
+
+  if not exists (
+    select 1
+    from pg_constraint con
+    join pg_class c on c.oid = con.conrelid
+    where c.relname = 'attraction_databases'
+      and con.conname = 'chk_attraction_databases_db_slot_only_1'
+  ) then
+    alter table attraction_databases
+      add constraint chk_attraction_databases_db_slot_only_1
+      check (db_slot = 1);
+  end if;
+end $$;
+`;
+
 async function ensureSchema() {
   const enabled = String(process.env.AUTO_INIT_SCHEMA || 'true').toLowerCase() !== 'false';
   if (!enabled) return;
   await pool.query(INIT_SQL);
+  await pool.query(SINGLE_DB_MODE_SQL);
 }
 
 const app = express();
@@ -124,6 +164,11 @@ app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || DEFAULT_BODY_LIMIT 
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     return res.status(400).json({ error: 'Invalid JSON body' });
+  }
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: `Payload too large. Please increase JSON_BODY_LIMIT (current: ${process.env.JSON_BODY_LIMIT || DEFAULT_BODY_LIMIT}).`,
+    });
   }
   if (err && String(err.message || '').includes('CORS')) {
     return res.status(403).json({ error: 'CORS blocked this origin' });
@@ -159,7 +204,7 @@ app.get('/attraction-databases', requireApiKey, async (req, res) => {
 
   const dbSlot = parseDbSlot(req.query.db_slot);
   if (!dbSlot) {
-    return res.status(400).json({ error: 'db_slot must be an integer between 1 and 10' });
+    return res.status(400).json({ error: 'db_slot must be 1' });
   }
 
   try {
@@ -187,7 +232,7 @@ app.put('/attraction-databases', requireApiKey, async (req, res) => {
 
   const dbSlot = parseDbSlot(req.body?.db_slot);
   if (!dbSlot) {
-    return res.status(400).json({ error: 'db_slot must be an integer between 1 and 10' });
+    return res.status(400).json({ error: 'db_slot must be 1' });
   }
 
   const payload = parsePayload(req.body?.payload);
