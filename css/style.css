@@ -1,32 +1,33 @@
 ﻿/* ===== CSS Variables ===== */
 :root {
-  --primary: #e63946;
-  --primary-dark: #c1121f;
-  --primary-light: #ff4d4d;
-  --gold: #f4a261;
-  --gold-light: #e9c46a;
-  --bg: #f8f9fc;
-  --card-bg: #ffffff;
-  --text: #1f2937;
-  --text-light: #6b7280;
-  --border: #e2e8f0;
-  --shadow: rgba(0, 0, 0, 0.05);
-  --shadow-hover: rgba(0, 0, 0, 0.12);
-  --visited-bg: #f5fdf9;
-  --visited-border: #10b981;
-  --success: #10b981;
-  --danger: #ef4444;
-  --tag-browser-bg-start: #ffffff;
-  --tag-browser-bg-end: #f8fafc;
-  --tag-level-1: #f97316;
-  --tag-level-2: #f59e0b;
-  --tag-level-3: #3b82f6;
-  --tag-level-4: #10b981;
-  --tag-level-5: #8b5cf6;
-  --radius: 16px;
-  --radius-sm: 10px;
-  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --primary: #FF3B30;
+  --primary-dark: #D70015;
+  --primary-light: #FF6961;
+  --gold: #FF9500;
+  --gold-light: #FFCC00;
+  --bg: #F2F2F7;
+  --card-bg: rgba(255, 255, 255, 0.65);
+  --card-blur: blur(20px);
+  --text: #1C1C1E;
+  --text-light: #8E8E93;
+  --border: rgba(60, 60, 67, 0.1);
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.08);
+  --visited-bg: rgba(52, 199, 89, 0.1);
+  --visited-border: #34C759;
+  --success: #34C759;
+  --danger: #FF3B30;
+  --tag-browser-bg-start: rgba(255, 255, 255, 0.8);
+  --tag-browser-bg-end: rgba(255, 255, 255, 0.4);
+  --tag-level-1: #FF9500;
+  --tag-level-2: #FFCC00;
+  --tag-level-3: #5AC8FA;
+  --tag-level-4: #34C759;
+  --tag-level-5: #AF52DE;
+  --radius: 20px;
+  --radius-sm: 12px;
+  --transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  --font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* ===== Reset ===== */
@@ -43,7 +44,9 @@
 
 body {
   font-family: var(--font-family);
-  background: var(--bg);
+  background: linear-gradient(120deg, #E0C3FC 0%, #8EC5FC 100%);
+  background-attachment: fixed;
+
   color: var(--text);
   min-height: 100vh;
   line-height: 1.6;
@@ -413,7 +416,9 @@ header h1 {
 
 /* ===== Tag Browser ===== */
 .tag-browser {
-  background: linear-gradient(180deg, var(--tag-browser-bg-start) 0%, var(--tag-browser-bg-end) 100%);
+  background: var(--tag-browser-bg-start);
+  backdrop-filter: var(--card-blur);
+  -webkit-backdrop-filter: var(--card-blur);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 2px 8px var(--shadow);
@@ -575,6 +580,8 @@ header h1 {
 
 .attraction-card {
   background: var(--card-bg);
+  backdrop-filter: var(--card-blur);
+  -webkit-backdrop-filter: var(--card-blur);
   border: 1px solid var(--border);
   border-left: 4px solid transparent;
   border-radius: var(--radius);
@@ -1170,6 +1177,9 @@ header h1 {
     grid-template-columns: 1fr;
   }
 }
+
+
+
 
 
 

@@ -1,8 +1,8 @@
 /* Auto-generated from 离开北京前的 100 个必做清单.docx */
 window.DEFAULT_ATTRACTIONS = [
   {
-    "name": "故宫",
-    "description": "挑一个雪天或大雨后，去听红墙外的回声。",
+    "name": "天安门升旗",
+    "description": "熬一次夜，看第一缕阳光下的红旗。",
     "tags": [
       {
         "level": 1,
@@ -11,8 +11,8 @@ window.DEFAULT_ATTRACTIONS = [
     ]
   },
   {
-    "name": "天安门升旗",
-    "description": "熬一次夜，看第一缕阳光下的红旗。",
+    "name": "故宫",
+    "description": "挑一个雪天或大雨后，去听红墙外的回声。",
     "tags": [
       {
         "level": 1,
