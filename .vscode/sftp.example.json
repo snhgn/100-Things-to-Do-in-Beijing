@@ -1,0 +1,16 @@
+{
+  "name": "SFTP Deploy",
+  "host": "your-server-ip-or-domain",
+  "protocol": "sftp",
+  "port": 22,
+  "username": "your-ssh-username",
+  "privateKeyPath": "C:/Users/your-username/.ssh/id_rsa",
+  "remotePath": "/var/www/html",
+  "uploadOnSave": true,
+  "ignore": [
+    ".vscode",
+    ".git",
+    ".DS_Store",
+    "node_modules"
+  ]
+}

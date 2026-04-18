@@ -8,7 +8,7 @@ const { Pool } = require('pg');
 
 const DB_SLOT_MIN = 1;
 const DB_SLOT_MAX = 1;
-const DEFAULT_BODY_LIMIT = '80mb';
+const DEFAULT_BODY_LIMIT = '200mb';
 const REQUIRED_ENV = ['PGHOST', 'PGUSER', 'PGPASSWORD', 'PGDATABASE'];
 
 const missingEnv = REQUIRED_ENV.filter((name) => !String(process.env[name] || '').trim());
@@ -24,16 +24,40 @@ function parseCsv(value) {
     .filter(Boolean);
 }
 
+function normalizeOrigin(rawOrigin) {
+  const value = String(rawOrigin || '').trim();
+  if (!value) return '';
+
+  try {
+    const parsed = new URL(value);
+    const protocol = String(parsed.protocol || '').toLowerCase();
+    const hostname = String(parsed.hostname || '').toLowerCase();
+    let port = String(parsed.port || '');
+
+    if ((protocol === 'http:' && port === '80') || (protocol === 'https:' && port === '443')) {
+      port = '';
+    }
+
+    return `${protocol}//${hostname}${port ? `:${port}` : ''}`;
+  } catch (_) {
+    return value.toLowerCase().replace(/\/$/, '');
+  }
+}
+
 function buildCorsOptions() {
   const allowList = parseCsv(
     process.env.CORS_ALLOWED_ORIGIN || process.env.CORS_ALLOWED_ORIGINS || ''
-  );
+  ).map((origin) => normalizeOrigin(origin));
+  const allowSet = new Set(allowList);
 
   return {
     origin(origin, callback) {
       // Browser extensions / curl / same-origin requests may have no origin header.
       if (!origin) return callback(null, true);
-      if (!allowList.length || allowList.includes(origin)) return callback(null, true);
+      // Frontend opened via file:// sends Origin: null in browsers.
+      if (origin === 'null') return callback(null, true);
+      const normalizedOrigin = normalizeOrigin(origin);
+      if (!allowSet.size || allowSet.has(normalizedOrigin)) return callback(null, true);
       return callback(new Error('CORS origin is not allowed'));
     },
     methods: ['GET', 'PUT', 'OPTIONS'],
@@ -67,8 +91,28 @@ function parseUserId(raw) {
   return userId;
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function parsePayload(raw) {
-  return Array.isArray(raw) ? raw : null;
+  if (Array.isArray(raw)) return raw;
+  if (!isPlainObject(raw)) return null;
+
+  const format = String(raw.format || '').trim().toLowerCase();
+  if (format !== 'delta-v2') return null;
+
+  if (!Array.isArray(raw.overrides)) return null;
+  if (!Array.isArray(raw.custom)) return null;
+  if (!Array.isArray(raw.removedDefaultIds)) return null;
+
+  return {
+    format: 'delta-v2',
+    base: String(raw.base || 'default-attractions-v1'),
+    overrides: raw.overrides,
+    custom: raw.custom,
+    removedDefaultIds: raw.removedDefaultIds,
+  };
 }
 
 function requireApiKey(req, res, next) {
@@ -217,7 +261,11 @@ app.get('/attraction-databases', requireApiKey, async (req, res) => {
     const result = await pool.query(query, [userId, dbSlot]);
     const payload = result.rows[0]?.payload;
 
-    return res.json({ payload: Array.isArray(payload) ? payload : [] });
+    if (Array.isArray(payload) || isPlainObject(payload)) {
+      return res.json({ payload });
+    }
+
+    return res.json({ payload: [] });
   } catch (err) {
     console.error('GET /attraction-databases failed:', err);
     return res.status(500).json({ error: 'Failed to load payload' });
@@ -237,7 +285,9 @@ app.put('/attraction-databases', requireApiKey, async (req, res) => {
 
   const payload = parsePayload(req.body?.payload);
   if (!payload) {
-    return res.status(400).json({ error: 'payload must be an array' });
+    return res
+      .status(400)
+      .json({ error: 'payload must be an array or delta-v2 object' });
   }
 
   try {

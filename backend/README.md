@@ -49,6 +49,37 @@ Body:
   "payload": []
 }
 
+The `payload` field supports two formats:
+
+1. Legacy full array (backward compatible):
+
+{
+  "payload": [
+    {
+      "id": 1,
+      "name": "故宫",
+      "description": "...",
+      "tags": [],
+      "visited": false,
+      "visitDate": null,
+      "notes": "",
+      "photos": []
+    }
+  ]
+}
+
+2. Compact `delta-v2` object (recommended for lower network/DB pressure):
+
+{
+  "payload": {
+    "format": "delta-v2",
+    "base": "default-attractions-v1",
+    "removedDefaultIds": [2, 3],
+    "overrides": [{ "i": 1, "v": 1, "o": "已打卡" }],
+    "custom": [{ "i": 101, "n": "自定义景点", "o": "备注" }]
+  }
+}
+
 ## 5) Deploy to Azure App Service (Node.js)
 
 1. Create a Web App (Runtime: Node.js 20).
@@ -68,5 +99,5 @@ Then refresh frontend page and check the top-right cloud status.
 
 ## 7) Payload Size
 
-- Default JSON_BODY_LIMIT is 80mb for media-heavy payloads.
+- Default JSON_BODY_LIMIT is 200mb for media-heavy payloads.
 - If uploads still fail with 413, increase JSON_BODY_LIMIT in .env and restart the service.

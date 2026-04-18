@@ -10,6 +10,8 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 - **📖 Collapsible Descriptions** — Click the ▼ button or the attraction title to expand/collapse the description, keeping the list compact
 - **📝 Visit Notes** — After checking in, write your personal impressions in a notes field that auto-saves as you type
 - **📷 Photo Upload** — Upload multiple photos per attraction; thumbnails are displayed in a gallery with a full-screen lightbox view
+- **🖼️ HEIC / HEIF Support** — HEIC uploads are auto-converted to JPEG for cross-device viewing compatibility
+- **✅ Upload Completion Notice** — After each upload action, the app shows a completion prompt with success/failure details
 - **🏷️ Tag Browser** — Tags are displayed as category pills; click a tag to view only attractions under that tag
 - **🔍 Filter View** — Switch between All / Visited / Unvisited to focus on what matters
 - **🧩 Independent Content Management** — Add/delete attractions in a dedicated panel separated from check-in content to reduce accidental operations
@@ -34,11 +36,25 @@ A **Beijing sightseeing check-in checklist** web application that lets you impor
 
 > **Requires an internet connection** for the first load to fetch the parsing libraries (SheetJS, mammoth.js, pdf.js) from CDN.
 
+## HEIC Dependency Download (Desktop)
+
+If your desktop browser cannot convert HEIC/HEIF files, you can open the dependency page directly from each attraction upload area via the link:
+
+- 下载 HEIC 依赖
+
+The link points to the heic2any package page:
+
+- https://www.npmjs.com/package/heic2any
+
+After network access is available, retry upload and the app will continue converting HEIC images to JPEG automatically.
+
 ## Security Notes
 
 - Do not commit real server addresses, API keys, database passwords, or SSH profiles to public repositories.
 - Keep actual backend credentials only in local `backend/.env`.
-- The committed `.vscode/sftp.json` is a template and should be replaced with your own private values locally.
+- Keep deployment credentials only in local `.vscode/sftp.json` (ignored by Git).
+- Use `.vscode/sftp.example.json` as the template for your own SFTP profile.
+- Use `js/config.example.js` as the template, then copy it to local `js/config.js` (ignored by Git).
 
 ## Technology
 
@@ -67,6 +83,11 @@ Quick start:
 2. `npm install`
 3. Copy `.env.example` to `.env` and fill your Azure PostgreSQL settings.
 4. `npm start`
+
+Frontend cloud config (optional):
+
+1. Copy `js/config.example.js` to `js/config.js`
+2. Fill `apiBaseUrl`, `apiKey`, `userId` in `js/config.js`
 
 ### 1) Create table in Azure Database for PostgreSQL
 
@@ -97,10 +118,10 @@ The frontend now calls these endpoints:
 
 The frontend sends `Authorization: Bearer <apiKey>` when `apiKey` is configured.
 
-### 3) Configure frontend in `index.html`
+### 3) Configure frontend in `js/config.js` (recommended)
 
 ```js
-window.CLOUD_SYNC_CONFIG = {
+window.APP_CONFIG = {
   apiBaseUrl: 'https://YOUR_API_HOST', // your backend API base URL
   apiKey: 'YOUR_API_KEY',              // optional
   userId: '',                          // optional; empty = shared default user id

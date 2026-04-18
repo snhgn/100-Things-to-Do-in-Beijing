@@ -22,7 +22,9 @@ function normalizeTagList(tags) {
     .map((tag) => {
       if (!tag || !tag.name) return null;
       const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
-      const name = String(tag.name).trim();
+      let name = String(tag.name).trim();
+      // Remove any previously stored "L1 · " prepends from the tag's raw string
+      name = name.replace(/^L\d\s*[·・\-]?\s*/i, '');
       return name ? { level, name } : null;
     })
     .filter(Boolean);
@@ -373,6 +375,7 @@ const App = {
   cloudSyncWarned: false,
   selectedDatabaseSlot: 1,
   cloudSaveTimer: null,
+  lightboxMedia: null,
 
   /* ---- init ---- */
   async init() {
@@ -386,7 +389,30 @@ const App = {
     ) {
       this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
     }
+
+    // Render early so slower mobile/webview bootstrap doesn't fall back to import-only perception.
+    this.render();
+
     await this._initAuth();
+    // Mobile/network safeguard: retry once if cloud is enabled but list still empty.
+    if (this.cloudSyncEnabled && (!Array.isArray(this.attractions) || this.attractions.length === 0)) {
+      await this._syncDatabaseFromCloud({ seedDefaultWhenEmpty: true });
+    }
+
+    // Final guard: if cloud is connected but list is still empty, keep the app usable with bundled defaults.
+    if (
+      this.cloudSyncEnabled &&
+      (!Array.isArray(this.attractions) || this.attractions.length === 0) &&
+      Array.isArray(window.DEFAULT_ATTRACTIONS) &&
+      window.DEFAULT_ATTRACTIONS.length
+    ) {
+      Store.replaceAll([]);
+      this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
+      this.expandedIds.clear();
+      this._scheduleCloudSave();
+    }
+
+    window.__APP_BOOT_OK__ = true;
     this.render();
   },
 
@@ -532,6 +558,14 @@ const App = {
     document.getElementById('modalClose').addEventListener('click', () => {
       this._closeLightbox();
     });
+    const modalDownloadBtn = document.getElementById('modalDownload');
+    if (modalDownloadBtn) {
+      modalDownloadBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await this._downloadLightboxMedia();
+      });
+    }
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (!document.getElementById('authModal').hidden) {
@@ -743,13 +777,7 @@ const App = {
     const cloudAttractions = await window.AuthService.loadDatabase(slot);
     if (!Array.isArray(cloudAttractions)) return;
 
-    if (
-      seedDefaultWhenEmpty &&
-      slot === DEFAULT_STARTUP_DATABASE_SLOT &&
-      cloudAttractions.length === 0 &&
-      Array.isArray(window.DEFAULT_ATTRACTIONS) &&
-      window.DEFAULT_ATTRACTIONS.length
-    ) {
+    if (seedDefaultWhenEmpty && slot === DEFAULT_STARTUP_DATABASE_SLOT && cloudAttractions.length === 0) {
       // If this device already has local data, push it first to avoid overriding user edits.
       if (Array.isArray(this.attractions) && this.attractions.length) {
         const pushed = await window.AuthService.saveDatabase(slot, this.attractions);
@@ -757,13 +785,18 @@ const App = {
         console.warn('Failed to bootstrap empty cloud db-1 from local data.');
       }
 
-      // Seed db-1 once so first open always lands on the built-in 100-item checklist.
-      Store.replaceAll([]);
-      this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
-      this.expandedIds.clear();
-      const seeded = await window.AuthService.saveDatabase(slot, this.attractions);
-      if (!seeded) {
-        console.warn('Failed to seed default db-1 payload to cloud; local fallback is active.');
+      if (Array.isArray(window.DEFAULT_ATTRACTIONS) && window.DEFAULT_ATTRACTIONS.length) {
+        // Seed db-1 once so first open always lands on the built-in checklist.
+        Store.replaceAll([]);
+        this.attractions = Store.addBatch(window.DEFAULT_ATTRACTIONS);
+        this.expandedIds.clear();
+        const seeded = await window.AuthService.saveDatabase(slot, this.attractions);
+        if (!seeded) {
+          console.warn('Failed to seed default db-1 payload to cloud; local fallback is active.');
+        }
+      } else {
+        // Keep current data instead of wiping UI to import state when defaults are unavailable.
+        console.warn('Cloud db-1 is empty and DEFAULT_ATTRACTIONS is unavailable; keeping current local list.');
       }
       return;
     }
@@ -815,17 +848,75 @@ const App = {
   },
 
   /* ---- file handling ---- */
-  async _handleFile(file) {
-    const loading = document.getElementById('loadingOverlay');
-    loading.hidden = false;
-    try {
-      const parsed = await Parser.parse(file);
-      if (!parsed.length) {
-        alert('未能从文件中解析出景点数据，请检查文件内容和格式。');
-        return;
-      }
-      this.attractions = Store.addBatch(parsed);
-      this._scheduleCloudSave();
+  /* ---- file handling helpers ---- */
+    normalizeAttractionNameForMatch(name) {
+      if (!name) return '';
+      return String(name).replace(/\d+/g, '').replace(/\s+/g, '').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+    },
+    _hasProgressRecord(item) {
+      return item.visited || (item.notes && item.notes.trim() !== '') || (item.photos && item.photos.length > 0);
+    },
+    _mergeImportedAttractions(parsedList) {
+      const existingByName = new Map();
+      this.attractions.forEach(a => {
+        const key = this.normalizeAttractionNameForMatch(a.name);
+        if (key) {
+          if (!existingByName.has(key)) existingByName.set(key, []);
+          existingByName.get(key).push(a);
+        }
+      });
+      const merged = [];
+      let newCount = 0, inheritedCount = 0;
+      const handledIds = new Set();
+
+      parsedList.forEach((incoming) => {
+        const key = this.normalizeAttractionNameForMatch(incoming.name);
+        let match = null;
+        if (key && existingByName.has(key)) {
+          const potentialMatches = existingByName.get(key);
+          match = potentialMatches.find(m => !handledIds.has(m.id)) || null;
+        }
+        if (match) {
+          merged.push({
+            ...incoming,
+            id: match.id,
+            visitDate: match.visitDate,
+            visited: match.visited,
+            notes: match.notes,
+            photos: match.photos
+          });
+          handledIds.add(match.id);
+          inheritedCount++;
+        } else {
+          merged.push(Store._ensureMeta(incoming));
+          newCount++;
+        }
+      });
+
+      let retainedCount = 0;
+      this.attractions.forEach(a => {
+        if (!handledIds.has(a.id) && this._hasProgressRecord(a)) {
+          merged.push(a);
+          retainedCount++;
+        }
+      });
+
+      return { merged, summary: { newCount, inheritedCount, retainedCount } };
+    },
+
+    async _handleFile(file) {
+      const loading = document.getElementById('loadingOverlay');
+      loading.hidden = false;
+      try {
+        const parsed = await Parser.parse(file);
+        if (!parsed.length) {
+            alert('未能从文件中解析出数据'); return;
+        }
+        const { merged, summary } = this._mergeImportedAttractions(parsed);
+        this.attractions = Store.replaceAll(merged);
+        this.expandedIds.clear();
+        alert(`导入成功！\n新增内容: ${summary.newCount} 项\n继承进度: ${summary.inheritedCount} 项\n保留原记录: ${summary.retainedCount} 项`);
+        this._scheduleCloudSave();
       this.render();
     } catch (err) {
       console.error(err);
@@ -837,9 +928,10 @@ const App = {
 
   /* ---- full render ---- */
   render() {
-    const hasAttractions = this.attractions.length > 0;
-    document.getElementById('importSection').hidden = hasAttractions;
-    document.getElementById('attractionsSection').hidden = !hasAttractions;
+    const hasAttractions = Array.isArray(this.attractions) && this.attractions.length > 0;
+    const showImportSection = !hasAttractions && !this.cloudSyncEnabled;
+    document.getElementById('importSection').hidden = !showImportSection;
+    document.getElementById('attractionsSection').hidden = showImportSection;
     this._renderStats();
     this._renderTagBrowser();
     this._renderDeleteOptions();
@@ -916,7 +1008,7 @@ const App = {
            ${tags
               .map((tag) => {
                 const level = Math.max(1, Math.min(5, Number(tag.level) || 1));
-                return `<span class="tag-badge level-${level}">L${level} · ${esc(tag.name)}</span>`;
+                return `<span class="tag-badge level-${level}">${esc(tag.name)}</span>`;
               })
               .join('')}
          </div>`
@@ -982,7 +1074,7 @@ const App = {
               ${esc(a.name)}
             </h3>
             ${tagsHTML}
-            ${a.visitDate ? `<span class="visit-date">📅 打卡时间：${esc(a.visitDate)}</span>` : ''}
+            ${`<span class="visit-date" style="visibility: ${a.visited ? 'visible' : 'hidden'}">📅 打卡时间：${a.visitDate ? esc(a.visitDate) : '-'}</span>`}
           </div>
           <button class="expand-btn" data-id="${a.id}"
                   aria-expanded="${expanded}"
@@ -1223,7 +1315,7 @@ const App = {
       .map(
         (tag) => `
           <button class="tag-pill ${this.tagFilter === tag.key ? 'active' : ''}" data-tag-key="${esc(tag.key)}">
-            L${tag.level} · ${esc(tag.name)} (${tag.count})
+            ${esc(tag.name)} (${tag.count})
           </button>`
       )
       .join('');
@@ -1298,9 +1390,15 @@ const App = {
     const modal = document.getElementById('photoModal');
     const image = document.getElementById('modalImage');
     const video = document.getElementById('modalVideo');
+    const downloadBtn = document.getElementById('modalDownload');
     modal.hidden = true;
     image.hidden = true;
     image.src = '';
+    this.lightboxMedia = null;
+    if (downloadBtn) {
+      downloadBtn.hidden = true;
+      downloadBtn.disabled = true;
+    }
     if (video) {
       video.pause();
       video.removeAttribute('src');
@@ -1316,6 +1414,12 @@ const App = {
     const modal = document.getElementById('photoModal');
     const image = document.getElementById('modalImage');
     const video = document.getElementById('modalVideo');
+    const downloadBtn = document.getElementById('modalDownload');
+    this.lightboxMedia = normalized;
+    if (downloadBtn) {
+      downloadBtn.hidden = false;
+      downloadBtn.disabled = false;
+    }
 
     if (normalized.kind === 'video' && video) {
       image.hidden = true;
@@ -1336,6 +1440,76 @@ const App = {
     }
 
     modal.hidden = false;
+  },
+
+  _guessMediaExtension(kind, src) {
+    const mimeMatch = String(src || '').match(/^data:([^;,]+)[;,]/i);
+    const mime = String(mimeMatch?.[1] || '').toLowerCase();
+    const extFromMime = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'image/bmp': 'bmp',
+      'image/avif': 'avif',
+      'image/heic': 'heic',
+      'image/heif': 'heif',
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'video/quicktime': 'mov',
+      'video/x-m4v': 'm4v',
+    };
+    if (extFromMime[mime]) return extFromMime[mime];
+
+    const path = String(src || '').split('?')[0].split('#')[0];
+    const pathMatch = path.match(/\.([a-z0-9]{2,5})$/i);
+    if (pathMatch) return String(pathMatch[1]).toLowerCase();
+
+    return kind === 'video' ? 'mp4' : 'jpg';
+  },
+
+  _buildLightboxDownloadName(kind, src) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const extension = this._guessMediaExtension(kind, src);
+    return `beijing-${kind}-${stamp}.${extension}`;
+  },
+
+  async _downloadLightboxMedia() {
+    if (!this.lightboxMedia || !this.lightboxMedia.src) return;
+
+    const src = String(this.lightboxMedia.src || '');
+    const kind = this.lightboxMedia.kind === 'video' ? 'video' : 'image';
+    const filename = this._buildLightboxDownloadName(kind, src);
+
+    try {
+      const link = document.createElement('a');
+      link.download = filename;
+      link.rel = 'noopener';
+
+      if (src.startsWith('data:')) {
+        link.href = src;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        return;
+      }
+
+      const response = await fetch(src, { mode: 'cors' });
+      if (!response.ok) throw new Error('download request failed');
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      link.href = objectUrl;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (e) {
+      console.warn('Media download fallback to open:', e);
+      window.open(src, '_blank', 'noopener');
+    }
   },
 };
 
