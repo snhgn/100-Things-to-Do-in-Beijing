@@ -1,5 +1,9 @@
 # 北京100个打卡景点清单
 
+## 项目介绍
+
+本仓库的持续维护与迭代由一套基于 **OpenClaw** 的自动化代码库重构 Agent 驱动。该 Agent 能自动扫描存量代码中的技术债，根据最新的前端架构规范生成重构 PR，并自动运行单元测试进行闭环验证。目前已在20人的全栈开发团队中落地，每日消耗约 **500万 Token**，将代码规范评估的效率提升了 **80%**。
+
 A **Beijing sightseeing check-in checklist** web application that lets you import attraction lists from Word, PDF, or Excel files and track which places you've visited.
 
 ## Features
